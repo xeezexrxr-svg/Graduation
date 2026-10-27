@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClearView interface preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f3f6fc;
+      color: #17233b;
+      font-family: Verdana, Arial, sans-serif;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 20px;
+      max-width: 1440px;
+      min-height: 100vh;
+      margin: auto;
+      padding: 24px;
+    }
+    h1 { margin: 0 0 6px; font-size: 32px; }
+    .sub, .status, .confidence, .tip { color: #53627a; }
+    .sub { margin: 0 0 18px; }
+    .camera {
+      display: grid;
+      min-height: 340px;
+      height: min(62vh, 580px);
+      place-items: center;
+      overflow: hidden;
+      border: 2px solid #d7deea;
+      border-radius: 14px;
+      background: linear-gradient(145deg, #dce4ef, #becad9);
+    }
+    .scene { position: relative; width: 270px; height: 370px; }
+    .cup {
+      position: absolute;
+      top: 36px;
+      left: 38px;
+      width: 190px;
+      height: 260px;
+      border-radius: 20px 20px 60px 60px;
+      background: linear-gradient(90deg, #ad633b, #d79465 52%, #935030);
+      box-shadow: 0 30px 40px #42526b55;
+    }
+    .rim {
+      position: absolute;
+      z-index: 2;
+      top: 25px;
+      left: 33px;
+      width: 200px;
+      height: 32px;
+      border: 8px solid #e2a77a;
+      border-radius: 50%;
+      background: #854a30;
+    }
+    .handle {
+      position: absolute;
+      z-index: 0;
+      top: 87px;
+      right: -5px;
+      width: 95px;
+      height: 135px;
+      border: 24px solid #a45e3b;
+      border-left: 0;
+      border-radius: 0 60px 60px 0;
+    }
+    .detect {
+      position: absolute;
+      z-index: 3;
+      top: 38px;
+      left: 30px;
+      width: 235px;
+      height: 310px;
+      border: 3px solid #176b46;
+      border-radius: 8px;
+    }
+    .tag {
+      position: absolute;
+      z-index: 4;
+      top: 10px;
+      left: 30px;
+      padding: 8px 12px;
+      border-radius: 5px;
+      background: #176b46;
+      color: white;
+      font-size: 14px;
+    }
+    .buttons { display: flex; gap: 12px; margin-top: 16px; }
+    button {
+      flex: 1;
+      padding: 16px 20px;
+      border: 0;
+      border-radius: 8px;
+      background: #2459a6;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    button.alt { background: #e8eef8; color: #17233b; }
+    .status { margin-top: 12px; color: #176b46; font-size: 14px; }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      padding: 26px;
+      border: 1px solid #d7deea;
+      border-radius: 14px;
+      background: white;
+    }
+    h2 { margin: 0 0 26px; font-size: 26px; }
+    .object { margin-bottom: 18px; color: #2459a6; font-size: 32px; font-weight: bold; }
+    .description { margin-bottom: 14px; font-size: 24px; line-height: 1.55; }
+    .confidence, .tip { margin: 12px 0; font-size: 14px; }
+    .speech-actions { display: grid; grid-template-columns: 3fr 2fr; gap: 10px; margin: 4px 0 10px; }
+    .speech-actions button { min-width: 0; }
+    .preferences {
+      margin-top: 8px;
+      padding: 10px;
+      border-top: 1px solid #d7deea;
+      border: 1px solid #d7deea;
+      border-radius: 8px;
+      background: #fbfcfe;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .setting { display: block; margin-top: 6px; color: #17233b; }
+    .setting input, .setting select { margin: 4px 0 0; accent-color: #2459a6; }
+    .setting select { width: 100%; padding: 8px; border: 1px solid #c8d2e2; border-radius: 6px; background: white; font: inherit; }
+    .range { display: flex; align-items: center; gap: 10px; }
+    .range input { flex: 1; }
+    .panel button { flex: none; margin: 0; }
+    .tip {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #edf3fb;
+    }
+    @media (max-width: 800px) {
+      .app { grid-template-columns: 1fr; padding: 14px; }
+      .panel { min-height: 600px; }
+      .camera { min-height: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section>
+      <h1>ClearView</h1>
+      <p class="sub">A camera assistant for everyday objects</p>
+      <div class="camera" aria-label="Illustration of the camera preview identifying a cup">
+        <div class="scene">
+          <div class="tag">Cup &nbsp; 92%</div>
+          <div class="handle"></div>
+          <div class="cup"></div>
+          <div class="rim"></div>
+          <div class="detect"></div>
+        </div>
+      </div>
+      <div class="buttons">
+        <button>Identify object</button>
+        <button class="alt">Choose a photo</button>
+      </div>
+      <button class="alt" style="width: 100%; margin-top: 10px">Return to live camera</button>
+      <div class="status">Camera ready. Point it at one object, then choose Identify object.</div>
+    </section>
+    <aside class="panel">
+      <h2>What is this?</h2>
+      <div class="object">Cup</div>
+      <div class="description">
+        This is a cup. It is used for drinking hot or cold drinks.
+      </div>
+      <div class="confidence">AI confidence: 92%</div>
+      <div class="speech-actions">
+        <button>Read aloud</button>
+        <button class="alt">Repeat</button>
+      </div>
+      <div class="preferences">
+        <label><input type="checkbox" checked> Read each result automatically</label>
+        <label class="setting">Reading font
+          <select><option>Verdana</option><option>Arial</option><option>Trebuchet MS</option></select>
+        </label>
+        <label class="setting">Text size
+          <span class="range"><span>18</span><input type="range" min="18" max="32" value="22"><span>32</span></span>
+        </label>
+        <label class="setting">Speech speed
+          <span class="range"><span>Slow</span><input type="range" min="110" max="210" value="155"><span>Fast</span></span>
+        </label>
+      </div>
+      <div class="tip">Tip: use good lighting and keep one object in view. The result may not always be correct.</div>
+    </aside>
+  </main>
+</body>
+</html>

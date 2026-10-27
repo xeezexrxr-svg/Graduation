@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler",
+  "name": "clearview-phone",
+  "pages_build_output_dir": "./public",
+  "compatibility_date": "2026-10-27"
+}
