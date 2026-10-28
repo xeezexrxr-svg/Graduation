@@ -409,13 +409,11 @@ class SpeechWorker(threading.Thread):
             return
 
         voice_lookup = {"Default": None}
-        gender_options = {"Female": [], "Male": []}
         try:
             for index in range(voices.Count):
                 voice = voices.Item(index)
                 raw_name = voice.GetDescription() or f"Voice {index + 1}"
                 lower_name = raw_name.lower()
-                gender = None
                 female_markers = (
                     "female", "zira", "hazel", "heera", "susan", "sara",
                     "jenny", "aria", "eva", "samantha",
@@ -426,24 +424,19 @@ class SpeechWorker(threading.Thread):
                 )
                 if any(marker in lower_name for marker in female_markers):
                     display_name = f"Female - {raw_name}"
-                    gender = "Female"
                 elif any(marker in lower_name for marker in male_markers):
                     display_name = f"Male - {raw_name}"
-                    gender = "Male"
                 else:
                     display_name = raw_name
                 if display_name in voice_lookup:
                     display_name = f"{display_name} ({index + 1})"
                 voice_lookup[display_name] = voice.Id
-                if gender:
-                    gender_options[gender].append(display_name)
             options = list(voice_lookup)
             self.events.put((
                 "voices_loaded",
                 {
                     "options": options,
                     "lookup": voice_lookup,
-                    "gender_options": gender_options,
                 },
             ))
         except Exception:
@@ -452,7 +445,6 @@ class SpeechWorker(threading.Thread):
                 {
                     "options": ["Default"],
                     "lookup": {"Default": None},
-                    "gender_options": {"Female": [], "Male": []},
                 },
             ))
 
@@ -485,7 +477,7 @@ class SpeechWorker(threading.Thread):
                             if voice.Id == voice_id:
                                 speaker.Voice = voice
                                 break
-                    speaker.Rate = max(-10, min(10, round((rate - 155) / 10)))
+                    speaker.Rate = max(-10, min(10, round((rate - 1.0) * (5 / 0.3))))
                     speaker.Volume = max(0, min(100, int(volume)))
                     word_positions = self._speech_word_positions(text)
                     speaker.Speak(text, 1)
@@ -574,10 +566,9 @@ class DyslexiaCameraApp:
         self.font_size = tk.IntVar(value=22)
         self.letter_spacing = tk.IntVar(value=0)
         self.line_spacing = tk.IntVar(value=4)
-        self.speech_rate = tk.IntVar(value=155)
+        self.speech_rate = tk.DoubleVar(value=1.0)
         self.volume = tk.IntVar(value=100)
         self.voice_name = tk.StringVar(value="Default")
-        self.voice_gender = tk.StringVar(value="Female")
         self.auto_speak = tk.BooleanVar(value=True)
         self.current_sentence = "Point the camera at an object, then choose Identify object."
         self.speech_request_id = 0
@@ -586,7 +577,6 @@ class DyslexiaCameraApp:
         self.typography_expanded = True
         self.audio_expanded = True
         self.voice_lookup = {}
-        self.gender_voice_options = {"Female": [], "Male": []}
         self.model_ready = False
         self.model_error = None
         self.last_frame = None
@@ -736,27 +726,15 @@ class DyslexiaCameraApp:
             font=("Arial", 10, "bold"),
             anchor="w",
         ).grid(row=0, column=0, sticky="w")
-        self.female_button = self._button(
+        self.voice_choice = ttk.Combobox(
             heading,
-            "Female",
-            lambda: self._select_voice_gender("Female"),
-            secondary=True,
+            textvariable=self.voice_name,
+            values=["Default"],
+            state="readonly",
+            font=("Arial", 10),
         )
-        self.female_button.configure(
-            font=("Arial", 10, "bold"), padx=10, pady=7, wraplength=0
-        )
-        self.female_button.grid(row=0, column=1, padx=(8, 4))
-        self.male_button = self._button(
-            heading,
-            "Male",
-            lambda: self._select_voice_gender("Male"),
-            secondary=True,
-        )
-        self.male_button.configure(
-            font=("Arial", 10, "bold"), padx=10, pady=7, wraplength=0
-        )
-        self.male_button.grid(row=0, column=2, padx=(4, 0))
-        self._update_gender_buttons()
+        self.voice_choice.grid(row=0, column=1, padx=(8, 0), sticky="e")
+        self.voice_choice.bind("<<ComboboxSelected>>", self._on_voice_change)
 
         self.object_name = tk.Label(
             self.explanation_card,
@@ -931,7 +909,7 @@ class DyslexiaCameraApp:
         self.size_scale = tk.Scale(
             size_controls,
             from_=18,
-            to=32,
+            to=36,
             orient="horizontal",
             variable=self.font_size,
             command=self._on_size_change,
@@ -1036,22 +1014,32 @@ class DyslexiaCameraApp:
         speed_control.grid_columnconfigure(1, weight=1)
         tk.Label(
             speed_control,
-            text="−/+  Speed",
+            text="Speech speed",
             bg=PALETTE["panel"],
             fg=PALETTE["text"],
             font=("Arial", 9, "bold"),
             anchor="w",
         ).grid(row=0, column=0, sticky="w", padx=(0, 4))
+        self.speed_value = tk.StringVar(value="1.0×")
+        tk.Label(
+            speed_control,
+            textvariable=self.speed_value,
+            bg=PALETTE["panel"],
+            fg=PALETTE["accent"],
+            font=("Arial", 9, "bold"),
+        ).grid(row=0, column=2, sticky="e", padx=(4, 0))
         self.speed_scale = tk.Scale(
             speed_control,
-            from_=110,
-            to=210,
+            from_=0.7,
+            to=1.3,
+            resolution=0.1,
             orient="horizontal",
             variable=self.speech_rate,
+            command=self._on_speech_rate_change,
             bg=PALETTE["panel"],
             fg=PALETTE["text"],
             highlightthickness=0,
-            showvalue=True,
+            showvalue=False,
             font=("Arial", 8),
             sliderlength=14,
             bd=0,
@@ -1246,29 +1234,8 @@ class DyslexiaCameraApp:
         self._render_description()
         self.description_label.see(f"1.0+{word_start}c")
 
-    def _update_gender_buttons(self):
-        for gender, button in (
-            ("Female", self.female_button),
-            ("Male", self.male_button),
-        ):
-            selected = self.voice_gender.get() == gender
-            button.configure(
-                bg=PALETTE["accent"] if selected else "#262d42",
-                fg="#202020" if selected else PALETTE["text"],
-                activebackground=PALETTE["accent_hover"],
-                activeforeground="#202020",
-            )
-
-    def _select_voice_gender(self, gender, announce=True):
-        self.voice_gender.set(gender)
-        self._update_gender_buttons()
-        voices = self.gender_voice_options.get(gender, [])
-        self.voice_name.set(voices[0] if voices else "Default")
-        if announce and not voices and not self.model_error:
-            self._set_status(
-                f"No {gender.lower()} voice was identified. Using the system default voice.",
-                "warning",
-            )
+    def _on_voice_change(self, event):
+        self.voice_name.set(event.widget.get())
 
     def _on_window_resize(self, event):
         if event.widget is not self.root:
@@ -1314,6 +1281,11 @@ class DyslexiaCameraApp:
         volume = int(float(value))
         self.volume.set(volume)
         self.speech.set_volume(volume)
+
+    def _on_speech_rate_change(self, value):
+        rate = round(float(value), 1)
+        self.speech_rate.set(rate)
+        self.speed_value.set(f"{rate:.1f}×")
 
     def _show_frame(self, frame):
         if Image is None or ImageTk is None:
@@ -1431,10 +1403,10 @@ class DyslexiaCameraApp:
                 self._set_status(message, "warning")
         elif event == "voices_loaded":
             self.voice_lookup = message.get("lookup", {"Default": None})
-            self.gender_voice_options = message.get(
-                "gender_options", {"Female": [], "Male": []}
-            )
-            self._select_voice_gender(self.voice_gender.get(), announce=False)
+            options = message.get("options", ["Default"])
+            self.voice_choice.configure(values=options)
+            if self.voice_name.get() not in options:
+                self.voice_name.set("Default")
 
     def _show_detection(self, detection):
         label = detection["label"].strip().lower().replace("_", " ")
@@ -1577,4 +1549,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

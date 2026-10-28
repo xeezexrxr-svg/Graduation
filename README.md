@@ -33,7 +33,7 @@ A separate mobile website and Cloudflare Pages deployment are in `phone-web`. It
 - Prefers a recognized held object over a person or hand detection, and retries on a padded person crop when an item is not detected in the full image
 - Object identification in a background worker, so model loading and analysis do not freeze the interface
 - Plain-language explanations and repeatable Windows SAPI text-to-speech playback with sentence and current-word highlighting that follows speech
-- Female and male voice buttons that select a matching installed speech voice when available
+- Voice dropdown for choosing an installed Windows speech voice
 - A two-card reading workspace with object explanations and read-aloud controls
 - Font, text size, letter spacing, line spacing, speech speed, and volume controls beside the explanation
 - Automatic speech toggle, repeat control, and confidence display
