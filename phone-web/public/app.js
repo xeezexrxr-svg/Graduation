@@ -433,7 +433,7 @@ async function scanImage() {
       recognizedText
         ? "Label text read. Check the text and product identification; AI can make mistakes."
         : payload.textReaderAvailable === false
-          ? "Object identified, but the text reader returned no result. Try scanning a closer, sharper photo."
+          ? "Object identified, but label reading returned no text. Try scanning a closer, sharper photo."
           : "Object identified, but I couldn't read clear label text. Move closer and keep the label in focus.",
       recognizedText ? "success" : "warning",
     );

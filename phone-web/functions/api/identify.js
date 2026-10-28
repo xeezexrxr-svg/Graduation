@@ -1,5 +1,6 @@
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+const OBJECT_MODEL = "@cf/llava-hf/llava-1.5-7b-hf";
+const OCR_MODEL = "@cf/moondream/moondream3.1-9B-A2B";
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HUMAN_LABELS = new Set(["person", "people", "human", "hand", "arm", "finger"]);
 const OBJECT_LABELS = [
@@ -204,56 +205,51 @@ export async function onRequestPost({ request, env }) {
   }
 
   try {
-    const result = await env.AI.run(MODEL, {
-      task: "query",
-      image: imageDataUri(image, contentType),
-      question: "Look closely at the main object and any label. Read the visible words exactly, especially Traditional Chinese characters; do not guess blurry or hidden text. Keep Chinese characters unchanged in visible_text. Use only text you can actually read to identify the product, and give the product name in simple English when confident. Reply only as JSON with this exact shape: {\"object\":\"short common object name in English\",\"visible_text\":\"exact readable label text or empty string\",\"product\":\"product or item identified from the readable label, or empty string\"}.",
-      reasoning: false,
-      temperature: 0.1,
-      max_tokens: 256,
+    const objectResult = await env.AI.run(OBJECT_MODEL, {
+      image: Array.from(image),
+      prompt: "Identify the main everyday object in this image. Reply with its short common name.",
+      max_tokens: 48,
     });
-    let answer = typeof result?.answer === "string" ? result.answer : "";
-    let textReaderAvailable = Boolean(answer);
-    let fallbackResult;
-    if (!answer) {
-      fallbackResult = await env.AI.run(MODEL, {
-        task: "caption",
-        image: imageDataUri(image, contentType),
-        caption_length: "long",
-        max_tokens: 256,
-      });
-      answer = typeof fallbackResult?.caption === "string"
-        ? fallbackResult.caption
-        : "";
+    const objectAnswer = typeof objectResult?.description === "string"
+      ? objectResult.description
+      : "";
+    const label = normalizeLabel(objectAnswer);
+
+    let textResult = null;
+    let textAnswer = "";
+    if (image.length <= MAX_IMAGE_BYTES) {
+      try {
+        textResult = await env.AI.run(OCR_MODEL, {
+          task: "query",
+          image: imageDataUri(image, contentType),
+          question: "Read only the visible label text, especially Traditional Chinese characters. Transcribe the characters exactly without translating or guessing. Return JSON only: {\"visible_text\":\"exact text, or empty string if none\",\"product\":\"product name in English if the text identifies it, otherwise empty string\"}.",
+          reasoning: false,
+          temperature: 0.1,
+          max_tokens: 256,
+        });
+        textAnswer = typeof textResult?.answer === "string"
+          ? textResult.answer
+          : "";
+      } catch (error) {
+        console.error("Workers AI label reading failed; keeping object result", error);
+      }
     }
 
-    const { label, recognizedText, product } = parseRecognition(answer);
-    const responseSummary = answer
-      ? undefined
-      : JSON.stringify({
-        query: result,
-        caption: fallbackResult,
-      })?.slice(0, 240) || "The vision model returned no text.";
+    const ocrResult = parseRecognition(textAnswer);
+    const recognizedText = ocrResult.recognizedText;
     return jsonResponse({
       found: Boolean(label || recognizedText),
       label,
       recognizedText: recognizedText || undefined,
-      product: recognizedText ? product || undefined : undefined,
-      textReaderAvailable,
-      answer: label || recognizedText ? undefined : answer.slice(0, 120),
-      modelFields: answer
+      product: recognizedText ? ocrResult.product || undefined : undefined,
+      textReaderAvailable: Boolean(textAnswer),
+      answer: label ? undefined : objectAnswer.slice(0, 120),
+      modelFields: objectAnswer ? undefined : Object.keys(objectResult || {}).slice(0, 12),
+      responseSummary: objectAnswer
         ? undefined
-        : [...new Set([
-          ...Object.keys(result || {}),
-          ...Object.keys(fallbackResult || {}),
-        ])].slice(0, 12),
-      responseSummary,
-      finishReason: answer
-        ? undefined
-        : result?.finish_reason || fallbackResult?.finish_reason,
-      outputTokens: answer
-        ? undefined
-        : result?.metrics?.output_tokens || fallbackResult?.metrics?.output_tokens,
+        : JSON.stringify(objectResult)?.slice(0, 240) || "The object model returned no text.",
+      finishReason: objectAnswer ? undefined : objectResult?.finish_reason,
+      outputTokens: objectAnswer ? undefined : objectResult?.metrics?.output_tokens,
     });
   } catch (error) {
     console.error("Workers AI object recognition failed", error);
