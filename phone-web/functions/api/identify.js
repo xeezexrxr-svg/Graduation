@@ -2,6 +2,42 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HUMAN_LABELS = new Set(["person", "people", "human", "hand", "arm", "finger"]);
+const OBJECT_LABELS = [
+  "cell phone",
+  "mobile phone",
+  "computer mouse",
+  "cellphone",
+  "headphones",
+  "toothbrush",
+  "backpack",
+  "keyboard",
+  "laptop",
+  "mouse",
+  "apple",
+  "banana",
+  "book",
+  "bottle",
+  "cup",
+  "fork",
+  "glasses",
+  "handbag",
+  "phone",
+  "pen",
+  "plate",
+  "remote",
+  "scissors",
+  "shoe",
+  "shoes",
+  "spoon",
+  "stapler",
+  "umbrella",
+  "wallet",
+];
+const LABEL_ALIASES = new Map([
+  ["computer mouse", "mouse"],
+  ["mobile phone", "cell phone"],
+  ["cellphone", "cell phone"],
+]);
 
 function jsonResponse(payload, status = 200) {
   return Response.json(payload, {
@@ -56,6 +92,19 @@ function toBase64(bytes) {
 }
 
 function normalizeLabel(answer) {
+  const knownLabel = OBJECT_LABELS.reduce((bestMatch, candidate) => {
+    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = new RegExp(`(^|[^a-z])${escaped}(?=$|[^a-z])`, "i").exec(answer);
+    if (!match) return bestMatch;
+    const index = match.index + match[1].length;
+    return !bestMatch || index < bestMatch.index
+      ? { index, label: candidate }
+      : bestMatch;
+  }, null);
+  if (knownLabel) {
+    return LABEL_ALIASES.get(knownLabel.label) || knownLabel.label;
+  }
+
   const label = answer
     .split(/\r?\n/, 1)[0]
     .replace(/^\s*(?:object|item|answer)\s*[:=-]\s*/i, "")
