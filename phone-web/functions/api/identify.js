@@ -1,5 +1,5 @@
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+const MODEL = "@cf/llava-hf/llava-1.5-7b-hf";
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HUMAN_LABELS = new Set(["person", "people", "human", "hand", "arm", "finger"]);
 const OBJECT_LABELS = [
@@ -81,16 +81,6 @@ async function readImage(request) {
   return image;
 }
 
-function toBase64(bytes) {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
 function normalizeLabel(answer) {
   const knownLabel = OBJECT_LABELS.reduce((bestMatch, candidate) => {
     const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -156,15 +146,11 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const result = await env.AI.run(MODEL, {
-      task: "caption",
-      image: `data:${contentType};base64,${toBase64(image)}`,
-      caption_length: "short",
+      image: Array.from(image),
+      prompt: "Identify the main everyday object in this image. Reply with its short common name.",
+      max_tokens: 48,
     });
-    const answer = typeof result?.caption === "string"
-      ? result.caption
-      : typeof result?.answer === "string"
-        ? result.answer
-        : "";
+    const answer = typeof result?.description === "string" ? result.description : "";
     const label = normalizeLabel(answer);
     const responseSummary = answer
       ? undefined
