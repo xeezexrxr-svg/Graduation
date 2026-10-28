@@ -5,8 +5,8 @@ A separate, mobile-friendly ClearView website. The existing Windows desktop app 
 ## What it does
 
 - Uses the phone's rear camera or photo picker to capture one image.
-- Sends the resized image to a Pages Function, which asks Cloudflare Workers AI's LLaVA model to identify the main everyday object, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label.
-- Shows a short explanation, the recognized label text, and any product identification based on that text, then reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
+- Sends the resized image to a Pages Function, which asks Cloudflare Workers AI's LLaVA model for a free-form description of the specific visible item, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label.
+- Shows the generated item description, recognized label text, and any product identification based on that text, then reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
 - Does not save photos. Images are sent to Cloudflare for inference.
 
 The website needs HTTPS for camera access, so use the deployed Cloudflare Pages URL on your phone. The photo picker remains available when camera access is denied or unavailable.

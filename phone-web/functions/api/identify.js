@@ -207,8 +207,8 @@ export async function onRequestPost({ request, env }) {
   try {
     const objectResult = await env.AI.run(OBJECT_MODEL, {
       image: Array.from(image),
-      prompt: "Identify the main everyday object in this image. Reply with its short common name.",
-      max_tokens: 48,
+      prompt: "Describe the main object in one or two short sentences, not just its broad category. Identify the specific kind of item when visible (for example, a drink bottle or tea bottle), and mention useful visible features such as material, color, shape, contents, or purpose. Read any clearly legible label text, including Traditional Chinese, exactly; do not guess text or details that are not visible. Reply with the description only.",
+      max_tokens: 128,
     });
     const objectAnswer = typeof objectResult?.description === "string"
       ? objectResult.description
@@ -240,6 +240,7 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse({
       found: Boolean(label || recognizedText),
       label,
+      description: objectAnswer.trim().replace(/\s+/g, " ").slice(0, 360) || undefined,
       recognizedText: recognizedText || undefined,
       product: recognizedText ? ocrResult.product || undefined : undefined,
       textReaderAvailable: Boolean(textAnswer),

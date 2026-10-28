@@ -421,10 +421,15 @@ async function scanImage() {
     const label = typeof payload.label === "string" && payload.label.trim()
       ? payload.label.trim()
       : "Labeled item";
-    const explanation = label === "Labeled item"
-      ? "I could read some label text, but could not identify the object itself."
-      : descriptions[label.toLowerCase()]
-        || "It is an everyday object. Its exact purpose may depend on the item.";
+    const modelDescription = typeof payload.description === "string"
+      ? payload.description.trim().slice(0, 360)
+      : "";
+    const explanation = modelDescription && modelDescription.toLowerCase() !== label.toLowerCase()
+      ? modelDescription
+      : label === "Labeled item"
+        ? "I could read some label text, but could not identify the object itself."
+        : descriptions[label.toLowerCase()]
+          || "It is an everyday object. Its exact purpose may depend on the item.";
     const product = typeof payload.product === "string"
       ? payload.product.trim().slice(0, 120)
       : "";
