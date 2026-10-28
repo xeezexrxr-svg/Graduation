@@ -116,7 +116,11 @@ export async function onRequestPost({ request, env }) {
     });
     const answer = typeof result?.answer === "string" ? result.answer : "";
     const label = normalizeLabel(answer);
-    return jsonResponse({ found: Boolean(label), label });
+    return jsonResponse({
+      found: Boolean(label),
+      label,
+      answer: label ? undefined : answer.slice(0, 120),
+    });
   } catch (error) {
     console.error("Workers AI object recognition failed", error);
     return jsonResponse({

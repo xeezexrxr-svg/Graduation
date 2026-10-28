@@ -400,7 +400,10 @@ async function scanImage() {
       throw new Error(payload?.error || "Could not identify that photo. Please try again.");
     }
     if (!payload?.found || !payload.label) {
-      throw new Error("I could not identify a clear everyday object. Try a closer, brighter photo.");
+      const modelAnswer = typeof payload?.answer === "string" && payload.answer.trim()
+        ? ` The AI replied: “${payload.answer.trim()}”`
+        : "";
+      throw new Error(`I could not identify a clear everyday object.${modelAnswer}`);
     }
     const label = payload.label.trim();
     const explanation = descriptions[label.toLowerCase()]
