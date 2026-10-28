@@ -19,7 +19,7 @@ The website needs HTTPS for camera access, so use the deployed Cloudflare Pages 
 4. The Workers AI binding is configured as `ai.binding: "AI"` in `wrangler.jsonc`. Commit and push that configuration so Cloudflare deploys it with the Pages project.
 5. Open the deployed `*.pages.dev` address on your phone and allow camera access. The phone and computer should be using the same public HTTPS site.
 
-The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses the `@cf/moondream/moondream3.1-9B-A2B` vision model. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
+The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses Cloudflare Workers AI's `@cf/llava-hf/llava-1.5-7b-hf` vision model. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
 
 For cost protection, configure a Cloudflare rate-limiting rule for `POST /api/identify` in the Cloudflare dashboard before sharing the public URL. The endpoint also limits image uploads to 4 MB and accepts only JPEG, PNG, and WebP.
 
