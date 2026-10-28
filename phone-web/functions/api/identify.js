@@ -109,7 +109,7 @@ export async function onRequestPost({ request, env }) {
     const result = await env.AI.run(MODEL, {
       task: "query",
       image: `data:${contentType};base64,${toBase64(image)}`,
-      question: "Identify the main everyday object in the foreground. If a person is holding something, name the held item, not the person or body parts. Reply with only the object's short common name, one to four words. If no everyday object is clearly visible, reply none.",
+      question: "What is the main object shown in this image? Reply with its common name in one or two words. If you are unsure, make your best guess.",
       reasoning: false,
       temperature: 0,
       max_tokens: 32,
