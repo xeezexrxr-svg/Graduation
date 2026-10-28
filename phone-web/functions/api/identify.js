@@ -111,12 +111,19 @@ export async function onRequestPost({ request, env }) {
       image: `data:${contentType};base64,${toBase64(image)}`,
       caption_length: "short",
     });
-    const answer = typeof result?.caption === "string" ? result.caption : "";
+    const answer = typeof result?.caption === "string"
+      ? result.caption
+      : typeof result?.answer === "string"
+        ? result.answer
+        : "";
     const label = normalizeLabel(answer);
     return jsonResponse({
       found: Boolean(label),
       label,
       answer: label ? undefined : answer.slice(0, 120),
+      modelFields: answer ? undefined : Object.keys(result || {}).slice(0, 12),
+      finishReason: answer ? undefined : result?.finish_reason,
+      outputTokens: answer ? undefined : result?.metrics?.output_tokens,
     });
   } catch (error) {
     console.error("Workers AI object recognition failed", error);
