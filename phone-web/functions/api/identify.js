@@ -109,7 +109,7 @@ export async function onRequestPost({ request, env }) {
     const result = await env.AI.run(MODEL, {
       task: "query",
       image: `data:${contentType};base64,${toBase64(image)}`,
-      question: "What is the main object shown in this image? Reply with its common name in one or two words. If you are unsure, make your best guess.",
+      question: "Identify the largest clearly visible everyday object in this image. Choose its most likely common name, even if you are not certain. Reply with only a short label, such as computer mouse, keyboard, laptop, bottle, cup, or book. Do not reply none if an object is visible.",
       reasoning: false,
       temperature: 0,
       max_tokens: 32,
