@@ -107,14 +107,11 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const result = await env.AI.run(MODEL, {
-      task: "query",
+      task: "caption",
       image: `data:${contentType};base64,${toBase64(image)}`,
-      question: "Identify the largest clearly visible everyday object in this image. Choose its most likely common name, even if you are not certain. Reply with only a short label, such as computer mouse, keyboard, laptop, bottle, cup, or book. Do not reply none if an object is visible.",
-      reasoning: false,
-      temperature: 0,
-      max_tokens: 32,
+      caption_length: "short",
     });
-    const answer = typeof result?.answer === "string" ? result.answer : "";
+    const answer = typeof result?.caption === "string" ? result.caption : "";
     const label = normalizeLabel(answer);
     return jsonResponse({
       found: Boolean(label),
