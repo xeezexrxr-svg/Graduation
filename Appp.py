@@ -306,6 +306,8 @@ class AnalysisWorker(threading.Thread):
             ))
             return
 
+        ocr_reader = None
+        ocr_error = None
         try:
             model = YOLOWorld(MODEL_FILE)
             if not self.candidate_names:
@@ -318,7 +320,24 @@ class AnalysisWorker(threading.Thread):
             ))
             return
 
-        self.events.put(("model_ready", f"AI model ready ({MODEL_FILE})."))
+        self.events.put(("ocr_loading", None))
+        try:
+            import easyocr
+
+            ocr_reader = easyocr.Reader(["en", "ch_tra"], gpu=False, verbose=False)
+        except Exception as error:
+            ocr_error = (
+                "Text reading is unavailable. Install the project requirements "
+                f"and restart the app. {error}"
+            )
+
+        self.events.put((
+            "model_ready",
+            {
+                "message": f"AI model ready ({MODEL_FILE}).",
+                "ocr_error": ocr_error,
+            },
+        ))
 
         while True:
             frame = self.requests.get()
@@ -361,6 +380,42 @@ class AnalysisWorker(threading.Thread):
                                 not in self.HUMAN_LABELS
                             ):
                                 detection = crop_detection
+                recognized_text = ""
+                detection_ocr_error = ocr_error
+                if ocr_reader is not None:
+                    try:
+                        frame_height, frame_width = frame.shape[:2]
+                        x1, y1, x2, y2 = detection["coordinates"]
+                        padding_x = max(12, int((x2 - x1) * 0.08))
+                        padding_y = max(12, int((y2 - y1) * 0.08))
+                        crop_x1 = max(0, int(x1) - padding_x)
+                        crop_y1 = max(0, int(y1) - padding_y)
+                        crop_x2 = min(frame_width, int(x2) + padding_x)
+                        crop_y2 = min(frame_height, int(y2) + padding_y)
+                        if crop_x2 > crop_x1 and crop_y2 > crop_y1:
+                            text_results = ocr_reader.readtext(
+                                frame[crop_y1:crop_y2, crop_x1:crop_x2],
+                                detail=1,
+                            )
+                            text_parts = []
+                            seen_text = set()
+                            for text_result in text_results:
+                                text = text_result[1].strip()
+                                confidence = float(text_result[2])
+                                normalized_text = text.casefold()
+                                if (
+                                    text
+                                    and confidence >= 0.30
+                                    and normalized_text not in seen_text
+                                ):
+                                    text_parts.append(text)
+                                    seen_text.add(normalized_text)
+                            recognized_text = " ".join(text_parts)[:240]
+                        detection_ocr_error = None
+                    except Exception as error:
+                        detection_ocr_error = f"Text reading failed: {error}"
+                detection["recognized_text"] = recognized_text
+                detection["ocr_error"] = detection_ocr_error
                 self.events.put((
                     "found",
                     detection,
@@ -1340,8 +1395,13 @@ class DyslexiaCameraApp:
         if event == "model_ready":
             self.model_ready = True
             self.model_error = None
-            self._set_status(payload, "success")
+            self._set_status(
+                payload["ocr_error"] or payload["message"],
+                "warning" if payload["ocr_error"] else "success",
+            )
             self.identify_button.configure(state="normal")
+        elif event == "ocr_loading":
+            self._set_status("Loading object and text recognition models…", "info")
         elif event == "model_error":
             self.is_analyzing = False
             self.analysis_frame = None
@@ -1411,19 +1471,35 @@ class DyslexiaCameraApp:
     def _show_detection(self, detection):
         label = detection["label"].strip().lower().replace("_", " ")
         confidence = detection["confidence"]
+        recognized_text = detection.get("recognized_text", "")
+        ocr_error = detection.get("ocr_error")
         explanation = self.descriptions.get(
             label,
             "It is an everyday object. You can add a simple explanation for it "
             "in object_descriptions.json.",
         )
         article = "an" if label[:1] in "aeiou" else "a"
-        self._set_description(f"This is {article} {label}. {explanation}")
+        description = f"This is {article} {label}. {explanation}"
+        if recognized_text:
+            description += f" The visible text reads: {recognized_text}."
+        self._set_description(description)
         self.object_name.configure(text=label.title())
         self.confidence_label.configure(text=f"AI confidence: {confidence:.0%}")
-        self._set_status(
-            "Object recognized. The result may not always be correct.",
-            "success",
-        )
+        if ocr_error:
+            self._set_status(
+                f"Object recognized, but text reading was unavailable: {ocr_error}",
+                "warning",
+            )
+        elif recognized_text:
+            self._set_status(
+                "Object recognized. Visible text was also read; either result may be incorrect.",
+                "success",
+            )
+        else:
+            self._set_status(
+                "Object recognized; no readable text was found. The result may not always be correct.",
+                "success",
+            )
 
         source_frame = self.analysis_frame
         if source_frame is not None:

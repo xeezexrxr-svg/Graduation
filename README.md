@@ -20,7 +20,7 @@ ClearView is a desktop prototype for an accessibility-focused camera assistant. 
    python Appp.py
    ```
 
-The first start may take longer because the object detector and its text encoder may need to download model files. The app installs the CLIP dependency from a ZIP, so Git is not required. The detector uses object names in `object_descriptions.json` as candidate labels. Allow camera access when Windows asks. After choosing a photo, select **Identify object** once the AI model is ready.
+The first start may take longer because the object detector, text reader, and their models may need to download model files. The app installs the CLIP dependency from a ZIP, so Git is not required. The detector uses object names in `object_descriptions.json` as candidate labels. Allow camera access when Windows asks. After choosing a photo, select **Identify object** once the AI models are ready.
 
 ## Phone website
 
@@ -31,6 +31,7 @@ A separate mobile website and Cloudflare Pages deployment are in `phone-web`. It
 - Live camera preview and photo selection
 - Open-vocabulary object identification using names from `object_descriptions.json`
 - Prefers a recognized held object over a person or hand detection, and retries on a padded person crop when an item is not detected in the full image
+- Uses EasyOCR to read visible English and Traditional Chinese text in the detected object's crop; recognized text is added to the result and read aloud with the object explanation
 - Object identification in a background worker, so model loading and analysis do not freeze the interface
 - Plain-language explanations and repeatable Windows SAPI text-to-speech playback with sentence and current-word highlighting that follows speech
 - Voice dropdown for choosing an installed Windows speech voice
@@ -56,8 +57,10 @@ Keep the file as valid JSON: use double quotes around names and text, and put a 
 ## Notes and limitations
 
 - The YOLO-World model can use the configured names as open-vocabulary detection prompts, but it will not identify every object reliably. Confidence is shown to help users judge results.
+- OCR can provide clues from labels or packaging, but it does not change YOLO's confidence and may misread text. If OCR cannot initialize, object detection continues without it.
+- Read-aloud pronunciation depends on the selected Windows voice supporting the recognized language. Install/select a Traditional Chinese voice in Windows for Chinese speech.
 - This is a student prototype, not a safety device. Do not rely on it to identify medicine, hazards, or other safety-critical items.
-- Camera frames are processed locally by this app. The pretrained model file may be downloaded by Ultralytics the first time it runs.
+- Camera frames and OCR are processed locally by this app. Pretrained model files may be downloaded by Ultralytics and EasyOCR the first time they run.
 - The default reading font is Arial, with Verdana and Trebuchet MS as alternatives. OpenDyslexic is offered when installed on the computer. The best font and reading settings vary between people, so users can choose their preferences.
 
 ## Project files

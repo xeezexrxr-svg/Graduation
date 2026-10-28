@@ -5,8 +5,8 @@ A separate, mobile-friendly ClearView website. The existing Windows desktop app 
 ## What it does
 
 - Uses the phone's rear camera or photo picker to capture one image.
-- Sends the resized image to a Pages Function, which asks Cloudflare Workers AI to identify the main everyday object.
-- Shows a short explanation and reads it aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
+- Sends the resized image to a Pages Function, which asks Cloudflare Workers AI to identify the main everyday object and transcribe visible English or Traditional Chinese text.
+- Shows a short explanation, includes any returned visible text, and reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
 - Does not save photos. Images are sent to Cloudflare for inference.
 
 The website needs HTTPS for camera access, so use the deployed Cloudflare Pages URL on your phone. The photo picker remains available when camera access is denied or unavailable.
@@ -19,7 +19,7 @@ The website needs HTTPS for camera access, so use the deployed Cloudflare Pages 
 4. The Workers AI binding is configured as `ai.binding: "AI"` in `wrangler.jsonc`. Commit and push that configuration so Cloudflare deploys it with the Pages project.
 5. Open the deployed `*.pages.dev` address on your phone and allow camera access. The phone and computer should be using the same public HTTPS site.
 
-The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses Cloudflare Workers AI's `@cf/llava-hf/llava-1.5-7b-hf` vision model. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
+The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses Cloudflare Workers AI's `@cf/llava-hf/llava-1.5-7b-hf` vision model for object identification and visible-text transcription. This is model-based transcription, not a dedicated OCR engine, and can miss or misread text. The phone site uses this vision model rather than the desktop app's YOLO-World and EasyOCR pipeline. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
 
 For cost protection, configure a Cloudflare rate-limiting rule for `POST /api/identify` in the Cloudflare dashboard before sharing the public URL. The endpoint also limits image uploads to 4 MB and accepts only JPEG, PNG, and WebP.
 
@@ -36,6 +36,7 @@ This serves the static site and Pages Function locally. For local scans, start W
 ## Limitations
 
 - Browser camera and speech features vary by phone and browser.
+- Speech pronunciation depends on the selected browser voice; choose one that supports Traditional Chinese to hear Chinese text read naturally.
 - Recognition is an AI estimate and can be wrong, especially for small, obscured, or unusual objects.
 - Cloudflare Workers AI usage may be subject to account limits or charges.
 - This site does not provide the desktop app's local YOLO detector, camera controls, or Windows voices.

@@ -240,8 +240,11 @@ function sentenceRangeAt(text, index) {
   return { start: 0, end: text.length };
 }
 
-function renderDescription(label, explanation) {
+function renderDescription(label, explanation, recognizedText = "") {
   currentDescription = `This is ${label}. ${explanation}`;
+  if (recognizedText) {
+    currentDescription += ` The visible text reads: ${recognizedText}.`;
+  }
   wordElements = [];
   activeWord = null;
   resultContent.replaceChildren();
@@ -412,8 +415,16 @@ async function scanImage() {
     const label = payload.label.trim();
     const explanation = descriptions[label.toLowerCase()]
       || "It is an everyday object. Its exact purpose may depend on the item.";
-    renderDescription(label, explanation);
-    setStatus("Object identified. The result is an AI estimate.", "success");
+    const recognizedText = typeof payload.recognizedText === "string"
+      ? payload.recognizedText.trim().slice(0, 240)
+      : "";
+    renderDescription(label, explanation, recognizedText);
+    setStatus(
+      recognizedText
+        ? "Object identified. The visible text is an AI estimate and may be incorrect."
+        : "Object identified. No readable text was returned; the result is an AI estimate.",
+      "success",
+    );
   } catch (error) {
     setStatus(error.message || "Could not identify that photo. Please try again.", "error");
   } finally {

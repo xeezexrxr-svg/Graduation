@@ -115,6 +115,46 @@ function normalizeLabel(answer) {
   return label;
 }
 
+function parseRecognition(answer) {
+  let objectText = "";
+  let visibleText = "";
+  let structuredResult;
+
+  const jsonMatch = answer.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      structuredResult = JSON.parse(jsonMatch[0]);
+    } catch {
+      structuredResult = null;
+    }
+  }
+
+  if (structuredResult && typeof structuredResult === "object") {
+    objectText = typeof structuredResult.object === "string"
+      ? structuredResult.object
+      : "";
+    visibleText = typeof structuredResult.visible_text === "string"
+      ? structuredResult.visible_text
+      : "";
+  } else {
+    objectText = answer.match(/^\s*(?:object|item)\s*[:=-]\s*(.+)$/im)?.[1] || "";
+    visibleText = answer.match(/^\s*visible[_ ]text\s*[:=-]\s*(.+)$/im)?.[1] || "";
+  }
+
+  const label = normalizeLabel(objectText || answer);
+  const normalizedVisibleText = visibleText
+    .replace(/^\s*["'`]+|["'`]+\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return {
+    label,
+    recognizedText: /^(none|no readable text|n\/a)$/i.test(normalizedVisibleText)
+      ? ""
+      : normalizedVisibleText.slice(0, 240),
+  };
+}
+
 export async function onRequestPost({ request, env }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     return jsonResponse({
@@ -147,17 +187,18 @@ export async function onRequestPost({ request, env }) {
   try {
     const result = await env.AI.run(MODEL, {
       image: Array.from(image),
-      prompt: "Identify the main everyday object in this image. Reply with its short common name.",
-      max_tokens: 48,
+      prompt: "Identify the main everyday object and transcribe any clearly readable text visible in the image, including English and Traditional Chinese. Do not guess missing or blurry text. Reply only as JSON with this exact shape: {\"object\":\"short common object name\",\"visible_text\":\"exact readable text, or empty string if none\"}.",
+      max_tokens: 160,
     });
     const answer = typeof result?.description === "string" ? result.description : "";
-    const label = normalizeLabel(answer);
+    const { label, recognizedText } = parseRecognition(answer);
     const responseSummary = answer
       ? undefined
       : JSON.stringify(result)?.slice(0, 240) || String(result);
     return jsonResponse({
       found: Boolean(label),
       label,
+      recognizedText: label ? recognizedText : undefined,
       answer: label ? undefined : answer.slice(0, 120),
       modelFields: answer ? undefined : Object.keys(result || {}).slice(0, 12),
       responseSummary,

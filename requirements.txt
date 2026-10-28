@@ -1,5 +1,6 @@
-opencv-python>=4.8
+opencv-python-headless>=4.8
 Pillow>=10.0
 comtypes>=1.2.0
 ultralytics>=8.3
+easyocr>=1.7.2
 clip @ https://github.com/ultralytics/CLIP/archive/refs/heads/main.zip
