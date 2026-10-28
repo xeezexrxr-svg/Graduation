@@ -240,8 +240,11 @@ function sentenceRangeAt(text, index) {
   return { start: 0, end: text.length };
 }
 
-function renderDescription(label, explanation, recognizedText = "") {
+function renderDescription(label, explanation, recognizedText = "", product = "") {
   currentDescription = `This is ${label}. ${explanation}`;
+  if (product) {
+    currentDescription += ` The label suggests this is ${product}.`;
+  }
   if (recognizedText) {
     currentDescription += ` The visible text reads: ${recognizedText}.`;
   }
@@ -402,7 +405,7 @@ async function scanImage() {
     if (!response.ok) {
       throw new Error(payload?.error || "Could not identify that photo. Please try again.");
     }
-    if (!payload?.found || !payload.label) {
+    if (!payload?.found || (!payload.label && !payload.recognizedText)) {
       const modelAnswer = typeof payload?.answer === "string" && payload.answer.trim()
         ? ` The AI replied: “${payload.answer.trim()}”`
         : ` The AI returned no caption${Array.isArray(payload?.modelFields) && payload.modelFields.length
@@ -412,18 +415,25 @@ async function scanImage() {
           : ""}.`;
       throw new Error(`I could not identify a clear everyday object.${modelAnswer}`);
     }
-    const label = payload.label.trim();
-    const explanation = descriptions[label.toLowerCase()]
-      || "It is an everyday object. Its exact purpose may depend on the item.";
     const recognizedText = typeof payload.recognizedText === "string"
       ? payload.recognizedText.trim().slice(0, 240)
       : "";
-    renderDescription(label, explanation, recognizedText);
+    const label = typeof payload.label === "string" && payload.label.trim()
+      ? payload.label.trim()
+      : "Labeled item";
+    const explanation = label === "Labeled item"
+      ? "I could read some label text, but could not identify the object itself."
+      : descriptions[label.toLowerCase()]
+        || "It is an everyday object. Its exact purpose may depend on the item.";
+    const product = typeof payload.product === "string"
+      ? payload.product.trim().slice(0, 120)
+      : "";
+    renderDescription(label, explanation, recognizedText, product);
     setStatus(
       recognizedText
-        ? "Object identified. The visible text is an AI estimate and may be incorrect."
-        : "Object identified. No readable text was returned; the result is an AI estimate.",
-      "success",
+        ? "Label text read. Check the text and product identification; AI can make mistakes."
+        : "Object identified, but I couldn't read clear label text. Move closer and keep the label in focus.",
+      recognizedText ? "success" : "warning",
     );
   } catch (error) {
     setStatus(error.message || "Could not identify that photo. Please try again.", "error");

@@ -277,6 +277,10 @@ summary:focus-visible {
   color: #91ddb0;
 }
 
+.status-message[data-kind="warning"] {
+  color: #ffd27d;
+}
+
 .result-icon {
   flex: 0 0 auto;
 }

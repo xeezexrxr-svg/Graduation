@@ -1,5 +1,5 @@
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const MODEL = "@cf/llava-hf/llava-1.5-7b-hf";
+const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HUMAN_LABELS = new Set(["person", "people", "human", "hand", "arm", "finger"]);
 const OBJECT_LABELS = [
@@ -115,9 +115,19 @@ function normalizeLabel(answer) {
   return label;
 }
 
+function imageDataUri(image, contentType) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < image.length; offset += chunkSize) {
+    binary += String.fromCharCode(...image.subarray(offset, offset + chunkSize));
+  }
+  return `data:${contentType};base64,${btoa(binary)}`;
+}
+
 function parseRecognition(answer) {
   let objectText = "";
   let visibleText = "";
+  let product = "";
   let structuredResult;
 
   const jsonMatch = answer.match(/\{[\s\S]*\}/);
@@ -136,9 +146,13 @@ function parseRecognition(answer) {
     visibleText = typeof structuredResult.visible_text === "string"
       ? structuredResult.visible_text
       : "";
+    product = typeof structuredResult.product === "string"
+      ? structuredResult.product
+      : "";
   } else {
     objectText = answer.match(/^\s*(?:object|item)\s*[:=-]\s*(.+)$/im)?.[1] || "";
     visibleText = answer.match(/^\s*visible[_ ]text\s*[:=-]\s*(.+)$/im)?.[1] || "";
+    product = answer.match(/^\s*product\s*[:=-]\s*(.+)$/im)?.[1] || "";
   }
 
   const label = normalizeLabel(objectText || answer);
@@ -152,6 +166,11 @@ function parseRecognition(answer) {
     recognizedText: /^(none|no readable text|n\/a)$/i.test(normalizedVisibleText)
       ? ""
       : normalizedVisibleText.slice(0, 240),
+    product: product
+      .replace(/^\s*["'`]+|["'`]+\s*$/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120),
   };
 }
 
@@ -186,20 +205,24 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const result = await env.AI.run(MODEL, {
-      image: Array.from(image),
-      prompt: "Identify the main everyday object and transcribe any clearly readable text visible in the image, including English and Traditional Chinese. Do not guess missing or blurry text. Reply only as JSON with this exact shape: {\"object\":\"short common object name\",\"visible_text\":\"exact readable text, or empty string if none\"}.",
-      max_tokens: 160,
+      task: "query",
+      image: imageDataUri(image, contentType),
+      question: "Look closely at the main object and any label. Read the visible words exactly, especially Traditional Chinese characters; do not guess blurry or hidden text. Keep Chinese characters unchanged in visible_text. Use only text you can actually read to identify the product, and give the product name in simple English when confident. Reply only as JSON with this exact shape: {\"object\":\"short common object name in English\",\"visible_text\":\"exact readable label text or empty string\",\"product\":\"product or item identified from the readable label, or empty string\"}.",
+      reasoning: false,
+      temperature: 0.1,
+      max_tokens: 256,
     });
-    const answer = typeof result?.description === "string" ? result.description : "";
-    const { label, recognizedText } = parseRecognition(answer);
+    const answer = typeof result?.answer === "string" ? result.answer : "";
+    const { label, recognizedText, product } = parseRecognition(answer);
     const responseSummary = answer
       ? undefined
       : JSON.stringify(result)?.slice(0, 240) || String(result);
     return jsonResponse({
-      found: Boolean(label),
+      found: Boolean(label || recognizedText),
       label,
-      recognizedText: label ? recognizedText : undefined,
-      answer: label ? undefined : answer.slice(0, 120),
+      recognizedText: recognizedText || undefined,
+      product: recognizedText ? product || undefined : undefined,
+      answer: label || recognizedText ? undefined : answer.slice(0, 120),
       modelFields: answer ? undefined : Object.keys(result || {}).slice(0, 12),
       responseSummary,
       finishReason: answer ? undefined : result?.finish_reason,
