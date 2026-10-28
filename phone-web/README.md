@@ -16,10 +16,10 @@ The website needs HTTPS for camera access, so use the deployed Cloudflare Pages 
 1. Push this repository to a Git provider connected to Cloudflare, or use the Cloudflare Pages dashboard to create a project from this repository.
 2. Set the Pages project root directory to `phone-web`.
 3. Use `public` as the build output directory. There is no build command.
-4. After the first deployment, open the Pages project in **Workers & Pages → Settings → Bindings**, add a **Workers AI** binding with the variable name `AI`, and redeploy.
+4. The Workers AI binding is configured as `ai.binding: "AI"` in `wrangler.jsonc`. Commit and push that configuration so Cloudflare deploys it with the Pages project.
 5. Open the deployed `*.pages.dev` address on your phone and allow camera access. The phone and computer should be using the same public HTTPS site.
 
-The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses the `@cf/moondream/moondream3.1-9B-A2B` vision model. The AI binding is configured in the Cloudflare dashboard because Pages Functions currently require dashboard configuration for Workers AI.
+The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses the `@cf/moondream/moondream3.1-9B-A2B` vision model. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
 
 For cost protection, configure a Cloudflare rate-limiting rule for `POST /api/identify` in the Cloudflare dashboard before sharing the public URL. The endpoint also limits image uploads to 4 MB and accepts only JPEG, PNG, and WebP.
 
@@ -31,7 +31,7 @@ Install Node.js, then from this directory run:
 npx wrangler pages dev public
 ```
 
-This serves the static site and Pages Function locally. The Workers AI binding must be configured for scans; add the `AI` binding in the Pages project dashboard before testing against a deployed project.
+This serves the static site and Pages Function locally. For local scans, start Wrangler with `npx wrangler pages dev public --ai AI`; Workers AI usage may incur charges.
 
 ## Limitations
 
