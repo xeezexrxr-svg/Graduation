@@ -32,6 +32,7 @@ A separate mobile website and Cloudflare Pages deployment are in `phone-web`. It
 - Open-vocabulary object identification using names from `object_descriptions.json`
 - Prefers a recognized held object over a person or hand detection, and retries on a padded person crop when an item is not detected in the full image
 - Uses EasyOCR to read visible English and Traditional Chinese text in the detected object's crop; recognized text is added to the result and read aloud with the object explanation
+- Sends the detected object crop to Cloudflare Workers AI for a more specific, free-form description and label-based product identification
 - Object identification in a background worker, so model loading and analysis do not freeze the interface
 - Plain-language explanations and repeatable Windows SAPI text-to-speech playback with sentence and current-word highlighting that follows speech
 - Voice dropdown for choosing an installed Windows speech voice
@@ -60,7 +61,7 @@ Keep the file as valid JSON: use double quotes around names and text, and put a 
 - OCR can provide clues from labels or packaging, but it does not change YOLO's confidence and may misread text. If OCR cannot initialize, object detection continues without it.
 - Read-aloud pronunciation depends on the selected Windows voice supporting the recognized language. Install/select a Traditional Chinese voice in Windows for Chinese speech.
 - This is a student prototype, not a safety device. Do not rely on it to identify medicine, hazards, or other safety-critical items.
-- Camera frames and OCR are processed locally by this app. Pretrained model files may be downloaded by Ultralytics and EasyOCR the first time they run.
+- YOLO detection and EasyOCR run locally. The detected object crop is sent to Cloudflare Workers AI for the optional detailed description and product identification; use the phone app or desktop app only with photos you are comfortable sending to the cloud. Pretrained model files may be downloaded by Ultralytics and EasyOCR the first time they run.
 - The default reading font is Arial, with Verdana and Trebuchet MS as alternatives. OpenDyslexic is offered when installed on the computer. The best font and reading settings vary between people, so users can choose their preferences.
 
 ## Project files

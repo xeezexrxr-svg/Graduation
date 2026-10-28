@@ -8,6 +8,8 @@ import re
 import threading
 import time
 import tkinter as tk
+import urllib.error
+import urllib.request
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
@@ -39,6 +41,7 @@ except ImportError:
 APP_DIR = Path(__file__).resolve().parent
 DESCRIPTIONS_FILE = APP_DIR / "object_descriptions.json"
 MODEL_FILE = "yolov8s-worldv2.pt"
+CLOUD_VISION_API_URL = "https://graduation-6j1.pages.dev/api/identify"
 MIN_CONFIDENCE = 0.30
 PREVIEW_SIZE = (800, 480)
 
@@ -298,6 +301,49 @@ class AnalysisWorker(threading.Thread):
             })
         return detections
 
+    @staticmethod
+    def _get_cloud_details(frame, detection):
+        frame_height, frame_width = frame.shape[:2]
+        x1, y1, x2, y2 = detection["coordinates"]
+        padding_x = max(12, int((x2 - x1) * 0.08))
+        padding_y = max(12, int((y2 - y1) * 0.08))
+        crop_x1 = max(0, int(x1) - padding_x)
+        crop_y1 = max(0, int(y1) - padding_y)
+        crop_x2 = min(frame_width, int(x2) + padding_x)
+        crop_y2 = min(frame_height, int(y2) + padding_y)
+        if crop_x2 <= crop_x1 or crop_y2 <= crop_y1:
+            raise ValueError("The detected object crop is empty.")
+
+        crop = frame[crop_y1:crop_y2, crop_x1:crop_x2]
+        crop_height, crop_width = crop.shape[:2]
+        scale = min(1.0, 960 / max(crop_width, crop_height))
+        if scale < 1:
+            crop = cv2.resize(
+                crop,
+                (round(crop_width * scale), round(crop_height * scale)),
+            )
+        success, encoded = cv2.imencode(
+            ".jpg",
+            crop,
+            [cv2.IMWRITE_JPEG_QUALITY, 78],
+        )
+        if not success:
+            raise ValueError("Could not encode the detected object for cloud analysis.")
+
+        request = urllib.request.Request(
+            CLOUD_VISION_API_URL,
+            data=encoded.tobytes(),
+            headers={"Content-Type": "image/jpeg"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=45) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("Cloud vision returned an invalid response.")
+        if not payload.get("found"):
+            raise ValueError("Cloud vision could not add details for this object.")
+        return payload
+
     def run(self):
         if YOLOWorld is None:
             self.events.put((
@@ -416,6 +462,28 @@ class AnalysisWorker(threading.Thread):
                         detection_ocr_error = f"Text reading failed: {error}"
                 detection["recognized_text"] = recognized_text
                 detection["ocr_error"] = detection_ocr_error
+                try:
+                    cloud_details = self._get_cloud_details(frame, detection)
+                    detection["cloud_description"] = cloud_details.get("description", "")
+                    detection["cloud_product"] = cloud_details.get("product", "")
+                    cloud_text = cloud_details.get("recognizedText", "")
+                    if isinstance(cloud_text, str) and cloud_text.strip():
+                        if recognized_text and cloud_text.strip().casefold() not in recognized_text.casefold():
+                            recognized_text = f"{recognized_text} {cloud_text.strip()}"
+                        elif not recognized_text:
+                            recognized_text = cloud_text.strip()
+                    detection["recognized_text"] = recognized_text[:240]
+                    detection["cloud_error"] = None
+                except (
+                    OSError,
+                    TimeoutError,
+                    ValueError,
+                    json.JSONDecodeError,
+                    urllib.error.URLError,
+                ) as error:
+                    detection["cloud_description"] = ""
+                    detection["cloud_product"] = ""
+                    detection["cloud_error"] = str(error)
                 self.events.put((
                     "found",
                     detection,
@@ -1473,19 +1541,34 @@ class DyslexiaCameraApp:
         confidence = detection["confidence"]
         recognized_text = detection.get("recognized_text", "")
         ocr_error = detection.get("ocr_error")
+        cloud_description = detection.get("cloud_description", "")
+        cloud_product = detection.get("cloud_product", "")
+        cloud_error = detection.get("cloud_error")
         explanation = self.descriptions.get(
             label,
             "It is an everyday object. You can add a simple explanation for it "
             "in object_descriptions.json.",
         )
         article = "an" if label[:1] in "aeiou" else "a"
-        description = f"This is {article} {label}. {explanation}"
+        if cloud_product:
+            description = f"The label suggests this is {cloud_product}. "
+        elif cloud_description:
+            description = cloud_description
+        else:
+            description = f"This is {article} {label}. {explanation}"
+        if cloud_product and cloud_description:
+            description += cloud_description
         if recognized_text:
             description += f" The visible text reads: {recognized_text}."
         self._set_description(description)
-        self.object_name.configure(text=label.title())
+        self.object_name.configure(text=(cloud_product or label).title())
         self.confidence_label.configure(text=f"AI confidence: {confidence:.0%}")
-        if ocr_error:
+        if cloud_error:
+            self._set_status(
+                f"Object recognized locally, but cloud description was unavailable: {cloud_error}",
+                "warning",
+            )
+        elif ocr_error:
             self._set_status(
                 f"Object recognized, but text reading was unavailable: {ocr_error}",
                 "warning",
