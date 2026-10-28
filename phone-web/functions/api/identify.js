@@ -212,21 +212,48 @@ export async function onRequestPost({ request, env }) {
       temperature: 0.1,
       max_tokens: 256,
     });
-    const answer = typeof result?.answer === "string" ? result.answer : "";
+    let answer = typeof result?.answer === "string" ? result.answer : "";
+    let textReaderAvailable = Boolean(answer);
+    let fallbackResult;
+    if (!answer) {
+      fallbackResult = await env.AI.run(MODEL, {
+        task: "caption",
+        image: imageDataUri(image, contentType),
+        caption_length: "long",
+        max_tokens: 256,
+      });
+      answer = typeof fallbackResult?.caption === "string"
+        ? fallbackResult.caption
+        : "";
+    }
+
     const { label, recognizedText, product } = parseRecognition(answer);
     const responseSummary = answer
       ? undefined
-      : JSON.stringify(result)?.slice(0, 240) || String(result);
+      : JSON.stringify({
+        query: result,
+        caption: fallbackResult,
+      })?.slice(0, 240) || "The vision model returned no text.";
     return jsonResponse({
       found: Boolean(label || recognizedText),
       label,
       recognizedText: recognizedText || undefined,
       product: recognizedText ? product || undefined : undefined,
+      textReaderAvailable,
       answer: label || recognizedText ? undefined : answer.slice(0, 120),
-      modelFields: answer ? undefined : Object.keys(result || {}).slice(0, 12),
+      modelFields: answer
+        ? undefined
+        : [...new Set([
+          ...Object.keys(result || {}),
+          ...Object.keys(fallbackResult || {}),
+        ])].slice(0, 12),
       responseSummary,
-      finishReason: answer ? undefined : result?.finish_reason,
-      outputTokens: answer ? undefined : result?.metrics?.output_tokens,
+      finishReason: answer
+        ? undefined
+        : result?.finish_reason || fallbackResult?.finish_reason,
+      outputTokens: answer
+        ? undefined
+        : result?.metrics?.output_tokens || fallbackResult?.metrics?.output_tokens,
     });
   } catch (error) {
     console.error("Workers AI object recognition failed", error);
