@@ -404,7 +404,9 @@ async function scanImage() {
         ? ` The AI replied: “${payload.answer.trim()}”`
         : ` The AI returned no caption${Array.isArray(payload?.modelFields) && payload.modelFields.length
           ? ` (response fields: ${payload.modelFields.join(", ")})`
-          : ""}${payload?.finishReason ? ` (finish: ${payload.finishReason})` : ""}.`;
+          : ""}${payload?.finishReason ? ` (finish: ${payload.finishReason})` : ""}${payload?.responseSummary
+          ? ` (response: ${payload.responseSummary})`
+          : ""}.`;
       throw new Error(`I could not identify a clear everyday object.${modelAnswer}`);
     }
     const label = payload.label.trim();

@@ -117,11 +117,15 @@ export async function onRequestPost({ request, env }) {
         ? result.answer
         : "";
     const label = normalizeLabel(answer);
+    const responseSummary = answer
+      ? undefined
+      : JSON.stringify(result)?.slice(0, 240) || String(result);
     return jsonResponse({
       found: Boolean(label),
       label,
       answer: label ? undefined : answer.slice(0, 120),
       modelFields: answer ? undefined : Object.keys(result || {}).slice(0, 12),
+      responseSummary,
       finishReason: answer ? undefined : result?.finish_reason,
       outputTokens: answer ? undefined : result?.metrics?.output_tokens,
     });
