@@ -40,7 +40,7 @@ This serves the static site and Pages Function locally. For local scans, start W
 ## Limitations
 
 - Browser camera and speech features vary by phone and browser.
-- Text recognition works best with a sharp, upright, evenly lit page; proofread OCR results. Selecting text works in the editable recognized-text area, and the browser reads the selected passage or all text.
+- Text recognition works best with a sharp, upright, evenly lit page; proofread OCR results. Selecting text works in the editable recognized-text area, and the browser reads the selected passage or all text. Text size and letter spacing apply to both the scanner text and object description; speech speed can be adjusted during playback, which resumes from the last word reported by the browser.
 - Speech pronunciation depends on the selected browser voice; choose one that supports Traditional Chinese to hear Chinese text read naturally.
 - Recognition is an AI estimate and can be wrong, especially for small, obscured, or unusual objects.
 - Cloudflare Workers AI usage may be subject to account limits or charges.

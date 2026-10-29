@@ -55,6 +55,7 @@ let speechVoices = [];
 let textOcrWorkerPromise = null;
 let textScanInProgress = false;
 let activeSpeechMode = null;
+let activeSpeechState = null;
 let speechRequestId = 0;
 
 const descriptions = {
@@ -615,46 +616,105 @@ function readAloud() {
   window.speechSynthesis.cancel();
   const requestId = ++speechRequestId;
   activeSpeechMode = "description";
-  const utterance = new SpeechSynthesisUtterance(currentDescription);
-  utterance.rate = Number(speechRateInput.value);
   const selectedVoice = voiceChoice.value === ""
     ? null
     : speechVoices[Number(voiceChoice.value)];
-  if (selectedVoice) utterance.voice = selectedVoice;
-  utterance.onboundary = (event) => {
-    if (
-      requestId === speechRequestId
-      && activeSpeechMode === "description"
-      && (event.name === "word" || Number.isFinite(event.charIndex))
-    ) {
-      updateSpeechBoundary(event.charIndex);
-    }
-  };
-  utterance.onend = () => {
-    if (requestId !== speechRequestId || activeSpeechMode !== "description") return;
-    if (activeWord) {
-      activeWord.element.classList.remove("reading-word");
-      activeWord.sentenceElement.classList.remove("reading-sentence-active");
-      activeWord = null;
-    }
-    activeSpeechMode = null;
-    readButton.disabled = false;
-    stopButton.disabled = true;
-    setStatus("Finished reading. You can listen again at any time.", "success");
-  };
-  utterance.onerror = (event) => {
-    if (requestId !== speechRequestId || activeSpeechMode !== "description") return;
-    activeSpeechMode = null;
-    readButton.disabled = false;
-    stopButton.disabled = true;
-    if (event.error !== "canceled" && event.error !== "interrupted") {
-      setStatus("The browser could not read this explanation aloud.", "error");
-    }
-  };
+  startSpeechUtterance({
+    mode: "description",
+    text: currentDescription,
+    sourceStart: 0,
+    offset: 0,
+    voice: selectedVoice,
+  }, 0, requestId);
   readButton.disabled = true;
   stopButton.disabled = false;
   setStatus("Reading the explanation aloud…", "success");
+}
+
+function startSpeechUtterance(state, offset, requestId) {
+  const text = state.text.slice(offset);
+  if (!text) return;
+  state.offset = offset;
+  activeSpeechState = state;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = Number(speechRateInput.value);
+  if (state.voice) utterance.voice = state.voice;
+  utterance.onboundary = (event) => {
+    if (requestId !== speechRequestId || activeSpeechMode !== state.mode) return;
+    const charIndex = offset + Math.max(0, event.charIndex || 0);
+    state.offset = Math.min(state.text.length, charIndex);
+    if (state.mode === "description") {
+      updateSpeechBoundary(charIndex);
+      return;
+    }
+
+    const boundaryLength = Number.isFinite(event.charLength) && event.charLength > 0
+      ? event.charLength
+      : splitIntoWords(state.text).find((word) => word.start <= charIndex && charIndex < word.end)?.end - charIndex || 1;
+    recognizedText.setSelectionRange(
+      state.sourceStart + charIndex,
+      Math.min(state.sourceStart + state.text.length, state.sourceStart + charIndex + boundaryLength),
+    );
+    updateTextReadingBoundary(state.sourceStart + charIndex);
+  };
+  utterance.onend = () => {
+    if (requestId !== speechRequestId || activeSpeechMode !== state.mode) return;
+    activeSpeechMode = null;
+    activeSpeechState = null;
+    if (state.mode === "description") {
+      if (activeWord) {
+        activeWord.element.classList.remove("reading-word");
+        activeWord.sentenceElement.classList.remove("reading-sentence-active");
+        activeWord = null;
+      }
+      readButton.disabled = false;
+      stopButton.disabled = true;
+      setStatus("Finished reading. You can listen again at any time.", "success");
+    } else {
+      stopTextButton.disabled = true;
+      clearTextReadingPreview();
+      updateTextScanControls();
+      setTextScanStatus("Finished reading the selected text.", "success");
+    }
+  };
+  utterance.onerror = (event) => {
+    if (requestId !== speechRequestId || activeSpeechMode !== state.mode) return;
+    activeSpeechMode = null;
+    activeSpeechState = null;
+    if (state.mode === "description") {
+      readButton.disabled = false;
+      stopButton.disabled = true;
+    } else {
+      stopTextButton.disabled = true;
+      clearTextReadingPreview();
+      updateTextScanControls();
+    }
+    if (event.error !== "canceled" && event.error !== "interrupted") {
+      const message = state.mode === "description"
+        ? "The browser could not read this explanation aloud."
+        : "The browser could not read this text aloud.";
+      if (state.mode === "description") setStatus(message, "error");
+      else setTextScanStatus(message, "error");
+    }
+  };
   window.speechSynthesis.speak(utterance);
+}
+
+function updateReadingSpeechRate() {
+  const output = document.querySelector("#speechRateValue");
+  output.value = `${Number(speechRateInput.value).toFixed(1)}×`;
+  if (!activeSpeechState || !("speechSynthesis" in window)) return;
+
+  const state = { ...activeSpeechState };
+  const offset = state.offset;
+  if (offset >= state.text.length) return;
+  const requestId = ++speechRequestId;
+  window.speechSynthesis.cancel();
+  activeSpeechMode = state.mode;
+  startSpeechUtterance(state, offset, requestId);
+  const message = "Speech speed updated; continuing from the current word.";
+  if (state.mode === "text") setTextScanStatus(message, "success");
+  else setStatus(message, "success");
 }
 
 function stopReading() {
@@ -678,6 +738,7 @@ function stopReading() {
     stopButton.disabled = true;
   }
   activeSpeechMode = null;
+  activeSpeechState = null;
 }
 
 function updateOcrProgress(message) {
@@ -825,46 +886,20 @@ function readScannerText(selectedOnly) {
   window.speechSynthesis.cancel();
   const requestId = ++speechRequestId;
   activeSpeechMode = "text";
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = Number(speechRateInput.value);
-  if (selectedVoice) utterance.voice = selectedVoice;
+  const speechState = {
+    mode: "text",
+    text,
+    sourceStart,
+    offset: 0,
+    voice: selectedVoice,
+  };
   renderTextReadingPreview(recognizedText.value);
-  utterance.onboundary = (event) => {
-    if (requestId !== speechRequestId || activeSpeechMode !== "text") return;
-    const start = Math.max(0, Math.min(text.length, event.charIndex || 0));
-    const boundaryLength = Number.isFinite(event.charLength) && event.charLength > 0
-      ? event.charLength
-      : splitIntoWords(text).find((word) => word.start <= start && start < word.end)?.end - start || 1;
-    recognizedText.setSelectionRange(
-      sourceStart + start,
-      Math.min(sourceStart + text.length, sourceStart + start + boundaryLength),
-    );
-    updateTextReadingBoundary(sourceStart + start);
-  };
-  utterance.onend = () => {
-    if (requestId !== speechRequestId || activeSpeechMode !== "text") return;
-    activeSpeechMode = null;
-    stopTextButton.disabled = true;
-    clearTextReadingPreview();
-    updateTextScanControls();
-    setTextScanStatus("Finished reading the selected text.", "success");
-  };
-  utterance.onerror = (event) => {
-    if (requestId !== speechRequestId || activeSpeechMode !== "text") return;
-    activeSpeechMode = null;
-    stopTextButton.disabled = true;
-    clearTextReadingPreview();
-    updateTextScanControls();
-    if (event.error !== "canceled" && event.error !== "interrupted") {
-      setTextScanStatus("The browser could not read this text aloud.", "error");
-    }
-  };
+  startSpeechUtterance(speechState, 0, requestId);
   updateTextScanControls();
   readSelectedTextButton.disabled = true;
   readAllTextButton.disabled = true;
   stopTextButton.disabled = false;
   setTextScanStatus(selectedOnly ? "Reading selected text…" : "Reading all recognized text…", "success");
-  window.speechSynthesis.speak(utterance);
 }
 
 async function scanImage() {
@@ -984,18 +1019,23 @@ window.addEventListener("pagehide", () => {
   stopCamera();
   stopTextCamera();
 });
-fontSizeInput.addEventListener("input", () => {
+function updateFontSizePreference() {
   document.querySelector("#fontSizeValue").value = `${fontSizeInput.value}px`;
-  resultContent.style.fontSize = `${fontSizeInput.value}px`;
-});
-letterSpacingInput.addEventListener("input", () => {
+  const fontSize = `${fontSizeInput.value}px`;
+  resultContent.style.fontSize = fontSize;
+  recognizedText.style.fontSize = fontSize;
+  textReadingPreview.style.fontSize = fontSize;
+}
+function updateLetterSpacingPreference() {
   const spacing = Number(letterSpacingInput.value) * 0.025;
   document.querySelector("#letterSpacingValue").value = letterSpacingInput.value;
   resultContent.style.letterSpacing = `${spacing}em`;
-});
-speechRateInput.addEventListener("input", () => {
-  document.querySelector("#speechRateValue").value = `${Number(speechRateInput.value).toFixed(1)}×`;
-});
+  recognizedText.style.letterSpacing = `${spacing}em`;
+  textReadingPreview.style.letterSpacing = `${spacing}em`;
+}
+fontSizeInput.addEventListener("input", updateFontSizePreference);
+letterSpacingInput.addEventListener("input", updateLetterSpacingPreference);
+speechRateInput.addEventListener("input", updateReadingSpeechRate);
 
 if ("speechSynthesis" in window) {
   refreshVoices();
@@ -1004,4 +1044,6 @@ if ("speechSynthesis" in window) {
   readButton.disabled = true;
   voiceChoice.disabled = true;
 }
+updateFontSizePreference();
+updateLetterSpacingPreference();
 updateTextScanControls();
