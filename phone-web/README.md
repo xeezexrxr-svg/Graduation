@@ -5,11 +5,14 @@ A separate, mobile-friendly ClearView website. The existing Windows desktop app 
 ## What it does
 
 - Uses the phone's rear camera or photo picker to capture one image.
+- Scans full-page English and Traditional Chinese text locally in the browser, then lets users edit or select recognized text to copy or read aloud.
 - Sends the resized image to a Pages Function, which asks Cloudflare Workers AI's LLaVA model for a free-form description of the specific visible item, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label.
 - Shows the generated item description, recognized label text, and any product identification based on that text, then reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
 - Does not save photos. Images are sent to Cloudflare for inference.
 
-The website needs HTTPS for camera access, so use the deployed Cloudflare Pages URL on your phone. The photo picker remains available when camera access is denied or unavailable.
+The website needs HTTPS for camera access and clipboard access, so use the deployed Cloudflare Pages URL on your phone. The photo picker remains available when camera access is denied or unavailable.
+
+The separate text scanner uses Tesseract.js in the browser to recognize English and Traditional Chinese. Its OCR models are downloaded on first use and cached by the browser; the selected image is processed on-device and is not uploaded for text scanning. Object identification still sends the image to Cloudflare Workers AI.
 
 ## Deploy to Cloudflare Pages
 
@@ -36,6 +39,7 @@ This serves the static site and Pages Function locally. For local scans, start W
 ## Limitations
 
 - Browser camera and speech features vary by phone and browser.
+- Text recognition works best with a sharp, upright, evenly lit page; proofread OCR results. Selecting text works in the editable recognized-text area, and the browser reads the selected passage or all text.
 - Speech pronunciation depends on the selected browser voice; choose one that supports Traditional Chinese to hear Chinese text read naturally.
 - Recognition is an AI estimate and can be wrong, especially for small, obscured, or unusual objects.
 - Cloudflare Workers AI usage may be subject to account limits or charges.

@@ -4,9 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#0e1322">
-    <meta name="description" content="Use your phone camera to identify an everyday object and hear a clear explanation.">
+    <meta name="description" content="Use your phone camera to identify objects or scan English and Traditional Chinese text and read selected words aloud.">
     <title>ClearView — Object Reader</title>
     <link rel="stylesheet" href="/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -73,6 +74,60 @@
           <p class="privacy-note">Photos are sent to Cloudflare Workers AI to identify the object. This app does not save them.</p>
         </section>
       </div>
+
+      <section id="textScannerCard" class="card text-scanner-card" aria-labelledby="text-scanner-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ON-DEVICE OCR</p>
+            <h2 id="text-scanner-title">Scan and read text</h2>
+          </div>
+          <span class="camera-badge">EN · 繁體中文</span>
+        </div>
+        <p class="text-scanner-help">
+          Capture a page with the camera above or choose a photo, then scan it here.
+          Recognition runs on this device. The English and Traditional Chinese
+          models download the first time and are cached by your browser.
+        </p>
+        <div class="text-scan-actions">
+          <button class="button button-primary" id="scanTextButton" type="button" disabled>
+            Capture & scan text
+          </button>
+          <button class="button button-secondary" id="textPhotoButton" type="button">
+            Choose a photo
+          </button>
+          <button class="button button-secondary" id="copySelectedTextButton" type="button" disabled>
+            Copy selected
+          </button>
+          <button class="button button-secondary" id="copyAllTextButton" type="button" disabled>
+            Copy all
+          </button>
+          <button class="button button-secondary" id="readSelectedTextButton" type="button" disabled>
+            Read selected
+          </button>
+          <button class="button button-secondary" id="readAllTextButton" type="button" disabled>
+            Read all
+          </button>
+          <button class="button button-secondary" id="stopTextButton" type="button" disabled>
+            Stop reading
+          </button>
+        </div>
+        <label class="recognized-text-label" for="recognizedText">
+          Recognized text <span>Select or edit the words you want to hear</span>
+        </label>
+        <textarea
+          id="recognizedText"
+          class="recognized-text"
+          rows="9"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          placeholder="Your scanned text will appear here. You can edit it and select any word or passage."
+          aria-describedby="textScanStatus"
+        ></textarea>
+        <p class="status-message" id="textScanStatus" role="status" aria-live="polite">
+          Start the camera or choose a photo above to enable text scanning.
+        </p>
+      </section>
 
       <details class="card preferences-card">
         <summary>Reading preferences</summary>
