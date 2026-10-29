@@ -4,6 +4,9 @@ const MAX_IMAGE_SIDE = 1280;
 const MAX_OCR_IMAGE_SIDE = 2400;
 const JPEG_QUALITY = 0.82;
 
+const menuToggle = document.querySelector("#menuToggle");
+const featureMenu = document.querySelector("#featureMenu");
+const screenLinks = document.querySelectorAll("[data-screen-target]");
 const cameraButton = document.querySelector("#cameraButton");
 const photoButton = document.querySelector("#photoButton");
 const photoInput = document.querySelector("#photoInput");
@@ -16,6 +19,11 @@ const scanStatus = document.querySelector("#scanStatus");
 const resultContent = document.querySelector("#resultContent");
 const readButton = document.querySelector("#readButton");
 const stopButton = document.querySelector("#stopButton");
+const textCameraButton = document.querySelector("#textCameraButton");
+const textCameraVideo = document.querySelector("#textCameraVideo");
+const textPhotoPreview = document.querySelector("#textPhotoPreview");
+const textCameraPlaceholder = document.querySelector("#textCameraPlaceholder");
+const textPhotoInput = document.querySelector("#textPhotoInput");
 const scanTextButton = document.querySelector("#scanTextButton");
 const textPhotoButton = document.querySelector("#textPhotoButton");
 const copySelectedTextButton = document.querySelector("#copySelectedTextButton");
@@ -31,9 +39,12 @@ const speechRateInput = document.querySelector("#speechRate");
 const voiceChoice = document.querySelector("#voiceChoice");
 
 let cameraStream = null;
+let textCameraStream = null;
+let textCameraRequestId = 0;
 let selectedImage = null;
-let selectedOcrImage = null;
 let selectedImageUrl = null;
+let textSelectedImage = null;
+let textSelectedImageUrl = null;
 let currentDescription = "";
 let wordElements = [];
 let activeWord = null;
@@ -86,7 +97,9 @@ function setTextScanStatus(message, kind = "info") {
 }
 
 function updateTextScanControls() {
-  scanTextButton.disabled = textScanInProgress || (!selectedImage && !cameraStream);
+  scanTextButton.disabled = textScanInProgress || !textSelectedImage;
+  textCameraButton.disabled = textScanInProgress;
+  textPhotoButton.disabled = textScanInProgress;
   const hasText = Boolean(recognizedText.value.trim());
   const hasSelection = recognizedText.selectionStart !== recognizedText.selectionEnd;
   const isReadingText = activeSpeechMode === "text";
@@ -96,6 +109,33 @@ function updateTextScanControls() {
   readAllTextButton.disabled = !hasText || isReadingText || !("speechSynthesis" in window);
 }
 
+function closeFeatureMenu() {
+  featureMenu.hidden = true;
+  menuToggle.setAttribute("aria-expanded", "false");
+  menuToggle.setAttribute("aria-label", "Open feature menu");
+}
+
+function showAppScreen(screenId) {
+  const screens = document.querySelectorAll(".app-screen");
+  for (const screen of screens) {
+    screen.hidden = screen.id !== screenId;
+  }
+  for (const link of screenLinks) {
+    if (link.dataset.screenTarget === screenId && link.matches("button")) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  }
+  if (screenId === "objectReaderScreen") {
+    stopTextCamera();
+  } else {
+    stopCamera();
+  }
+  closeFeatureMenu();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 function releaseSelectedImage() {
   if (selectedImageUrl) {
     URL.revokeObjectURL(selectedImageUrl);
@@ -103,17 +143,15 @@ function releaseSelectedImage() {
   }
 }
 
-function showSelectedImage(blob, ocrSource = blob) {
+function showSelectedImage(blob) {
   releaseSelectedImage();
   selectedImage = blob;
-  selectedOcrImage = ocrSource;
   selectedImageUrl = URL.createObjectURL(blob);
   photoPreview.src = selectedImageUrl;
   photoPreview.hidden = false;
   cameraVideo.hidden = true;
   cameraPlaceholder.hidden = true;
   scanButton.disabled = false;
-  updateTextScanControls();
 }
 
 function stopCamera() {
@@ -126,7 +164,9 @@ function stopCamera() {
   cameraVideo.srcObject = null;
   cameraVideo.hidden = true;
   cameraButton.textContent = "Start camera";
-  updateTextScanControls();
+  if (!selectedImage) {
+    cameraPlaceholder.hidden = false;
+  }
 }
 
 async function startCamera() {
@@ -146,7 +186,6 @@ async function startCamera() {
     stopCamera();
     releaseSelectedImage();
     selectedImage = null;
-    selectedOcrImage = null;
     scanButton.disabled = true;
     cameraPlaceholder.hidden = true;
     photoPreview.hidden = true;
@@ -162,12 +201,10 @@ async function startCamera() {
     cameraVideo.hidden = false;
     cameraButton.textContent = "Capture photo";
     await cameraVideo.play();
-    updateTextScanControls();
     setStatus("Camera ready. Center one item, then capture it.", "success");
   } catch (error) {
     stopCamera();
     cameraPlaceholder.hidden = false;
-    updateTextScanControls();
     const message = error.name === "NotAllowedError"
       ? "Camera permission was denied. Allow access in your browser settings or choose a photo."
       : "Could not start the camera. Choose a photo or check your browser's camera permission.";
@@ -187,19 +224,19 @@ function canvasToJpeg(canvas, quality = JPEG_QUALITY) {
   });
 }
 
-async function captureCameraJpeg(maxSide, quality) {
+async function captureVideoJpeg(video, maxSide, quality) {
   const scale = Math.min(
     1,
-    maxSide / Math.max(cameraVideo.videoWidth, cameraVideo.videoHeight),
+    maxSide / Math.max(video.videoWidth, video.videoHeight),
   );
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(cameraVideo.videoWidth * scale));
-  canvas.height = Math.max(1, Math.round(cameraVideo.videoHeight * scale));
+  canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+  canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
   const context = canvas.getContext("2d");
   if (!context) {
     throw new Error("This browser could not prepare the camera image.");
   }
-  context.drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
   return canvasToJpeg(canvas, quality);
 }
 
@@ -209,11 +246,8 @@ async function capturePhoto() {
     return;
   }
   try {
-    const [image, ocrImage] = await Promise.all([
-      captureCameraJpeg(MAX_IMAGE_SIDE, JPEG_QUALITY),
-      captureCameraJpeg(MAX_OCR_IMAGE_SIDE, 0.9),
-    ]);
-    showSelectedImage(image, ocrImage);
+    const image = await captureVideoJpeg(cameraVideo, MAX_IMAGE_SIDE, JPEG_QUALITY);
+    showSelectedImage(image);
     stopCamera();
     setStatus("Photo captured. Choose Identify object to scan it.", "success");
   } catch (error) {
@@ -254,7 +288,7 @@ async function preparePhoto(file) {
       throw new Error("This browser could not prepare that photo.");
     }
     context.drawImage(image, 0, 0, captureCanvas.width, captureCanvas.height);
-    showSelectedImage(await canvasToJpeg(captureCanvas), file);
+    showSelectedImage(await canvasToJpeg(captureCanvas));
     stopCamera();
     setStatus("Photo ready. Choose Identify object to scan it.", "success");
   } catch (error) {
@@ -262,6 +296,112 @@ async function preparePhoto(file) {
   } finally {
     photoInput.value = "";
   }
+}
+
+function releaseTextSelectedImage() {
+  if (textSelectedImageUrl) {
+    URL.revokeObjectURL(textSelectedImageUrl);
+    textSelectedImageUrl = null;
+  }
+}
+
+function showTextSelectedImage(image) {
+  releaseTextSelectedImage();
+  textSelectedImage = image;
+  textSelectedImageUrl = URL.createObjectURL(image);
+  textPhotoPreview.src = textSelectedImageUrl;
+  textPhotoPreview.hidden = false;
+  textCameraVideo.hidden = true;
+  textCameraPlaceholder.hidden = true;
+  updateTextScanControls();
+}
+
+function stopTextCamera() {
+  textCameraRequestId += 1;
+  if (textCameraStream) {
+    for (const track of textCameraStream.getTracks()) {
+      track.stop();
+    }
+    textCameraStream = null;
+  }
+  textCameraVideo.srcObject = null;
+  textCameraVideo.hidden = true;
+  textCameraButton.textContent = "Start camera";
+  if (!textSelectedImage) {
+    textCameraPlaceholder.hidden = false;
+  }
+}
+
+async function startTextCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setTextScanStatus("Camera access is not available in this browser. Choose a photo instead.", "error");
+    textPhotoInput.click();
+    return;
+  }
+  try {
+    stopTextCamera();
+    const requestId = textCameraRequestId;
+    releaseTextSelectedImage();
+    textSelectedImage = null;
+    textPhotoPreview.hidden = true;
+    textCameraPlaceholder.hidden = true;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+    });
+    if (requestId !== textCameraRequestId || document.querySelector("#textScannerScreen").hidden) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      return;
+    }
+    textCameraStream = stream;
+    textCameraVideo.srcObject = textCameraStream;
+    textCameraVideo.hidden = false;
+    textCameraButton.textContent = "Capture page";
+    await textCameraVideo.play();
+    updateTextScanControls();
+    setTextScanStatus("Camera ready. Frame the page, then capture it.", "success");
+  } catch (error) {
+    stopTextCamera();
+    const message = error.name === "NotAllowedError"
+      ? "Camera permission was denied. Allow access in your browser settings or choose a photo."
+      : "Could not start the camera. Choose a photo or check your browser's camera permission.";
+    setTextScanStatus(message, "error");
+  }
+}
+
+async function captureTextPhoto() {
+  if (!textCameraStream || !textCameraVideo.videoWidth || !textCameraVideo.videoHeight) {
+    setTextScanStatus("Wait for the camera preview, then try capturing again.", "error");
+    return;
+  }
+  try {
+    setTextScanStatus("Capturing a high-resolution page photo…");
+    const image = await captureVideoJpeg(textCameraVideo, MAX_OCR_IMAGE_SIDE, 0.9);
+    showTextSelectedImage(image);
+    stopTextCamera();
+    setTextScanStatus("Page photo ready. Choose Scan text to recognize it.", "success");
+  } catch (error) {
+    setTextScanStatus(error.message || "Could not capture the page photo.", "error");
+  }
+}
+
+function prepareTextPhoto(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    setTextScanStatus("Choose an image file to scan.", "error");
+    textPhotoInput.value = "";
+    return;
+  }
+  stopTextCamera();
+  showTextSelectedImage(file);
+  setTextScanStatus("Photo ready. Choose Scan text to recognize it.", "success");
+  textPhotoInput.value = "";
 }
 
 function splitIntoWords(text) {
@@ -510,37 +650,19 @@ async function prepareOcrImage(blob) {
 
 async function scanTextImage() {
   if (textScanInProgress) return;
+  if (!textSelectedImage) {
+    setTextScanStatus("Start the camera and capture a page, or choose a photo first.", "warning");
+    return;
+  }
   textScanInProgress = true;
   scanTextButton.disabled = true;
-  scanTextButton.textContent = cameraStream ? "Capturing page…" : "Preparing text reader…";
   updateTextScanControls();
   try {
-    let image = selectedOcrImage || selectedImage;
-    if (cameraStream) {
-      if (!cameraVideo.videoWidth || !cameraVideo.videoHeight) {
-        throw new Error("Wait for the camera preview before scanning.");
-      }
-      setTextScanStatus("Capturing a high-resolution page image…");
-      const [previewImage, ocrImage] = await Promise.all([
-        captureCameraJpeg(MAX_IMAGE_SIDE, JPEG_QUALITY),
-        captureCameraJpeg(MAX_OCR_IMAGE_SIDE, 0.9),
-      ]);
-      showSelectedImage(previewImage, ocrImage);
-      stopCamera();
-      image = ocrImage;
-      setStatus("Text scan photo captured.", "success");
-    }
-    if (!image) {
-      setTextScanStatus("Start the camera or choose a photo above first.", "warning");
-      return;
-    }
-
     stopReading();
-    scanTextButton.textContent = "Loading text reader…";
     setTextScanStatus("Loading English and Traditional Chinese text models…");
     const worker = await getTextOcrWorker();
     setTextScanStatus("Enhancing the image and recognizing text…");
-    const ocrImage = await prepareOcrImage(image);
+    const ocrImage = await prepareOcrImage(textSelectedImage);
     const { data } = await worker.recognize(ocrImage);
     const text = typeof data.text === "string" ? data.text.trim() : "";
     recognizedText.value = text;
@@ -565,7 +687,6 @@ async function scanTextImage() {
     );
   } finally {
     textScanInProgress = false;
-    scanTextButton.textContent = "Capture & scan text";
     updateTextScanControls();
   }
 }
@@ -726,9 +847,17 @@ cameraButton.addEventListener("click", () => {
   }
 });
 photoButton.addEventListener("click", () => photoInput.click());
-textPhotoButton.addEventListener("click", () => photoInput.click());
 photoInput.addEventListener("change", () => preparePhoto(photoInput.files?.[0]));
 scanButton.addEventListener("click", scanImage);
+textCameraButton.addEventListener("click", () => {
+  if (textCameraStream) {
+    captureTextPhoto();
+  } else {
+    startTextCamera();
+  }
+});
+textPhotoButton.addEventListener("click", () => textPhotoInput.click());
+textPhotoInput.addEventListener("change", () => prepareTextPhoto(textPhotoInput.files?.[0]));
 scanTextButton.addEventListener("click", scanTextImage);
 copySelectedTextButton.addEventListener("click", () => copyScannerText(true));
 copyAllTextButton.addEventListener("click", () => copyScannerText(false));
@@ -740,7 +869,30 @@ recognizedText.addEventListener("select", updateTextScanControls);
 document.addEventListener("selectionchange", updateTextScanControls);
 readButton.addEventListener("click", readAloud);
 stopButton.addEventListener("click", stopReading);
-window.addEventListener("pagehide", stopCamera);
+menuToggle.addEventListener("click", () => {
+  const isExpanded = menuToggle.getAttribute("aria-expanded") === "true";
+  featureMenu.hidden = isExpanded;
+  menuToggle.setAttribute("aria-expanded", String(!isExpanded));
+  menuToggle.setAttribute("aria-label", isExpanded ? "Open feature menu" : "Close feature menu");
+});
+for (const link of screenLinks) {
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    showAppScreen(link.dataset.screenTarget);
+  });
+}
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".feature-nav")) {
+    closeFeatureMenu();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeFeatureMenu();
+});
+window.addEventListener("pagehide", () => {
+  stopCamera();
+  stopTextCamera();
+});
 fontSizeInput.addEventListener("input", () => {
   document.querySelector("#fontSizeValue").value = `${fontSizeInput.value}px`;
   resultContent.style.fontSize = `${fontSizeInput.value}px`;

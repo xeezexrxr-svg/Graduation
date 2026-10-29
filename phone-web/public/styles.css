@@ -49,6 +49,78 @@ main {
   border-bottom: 1px solid rgba(185, 186, 208, 0.12);
 }
 
+.header-start {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.feature-nav {
+  position: relative;
+}
+
+.menu-toggle {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #262d42;
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.menu-toggle svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.menu-toggle:focus-visible,
+.feature-menu button:focus-visible {
+  outline: 3px solid rgba(180, 154, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.feature-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  width: 190px;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+}
+
+.feature-menu button {
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.feature-menu button:hover,
+.feature-menu button[aria-current="page"] {
+  background: #303752;
+  color: var(--accent);
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -202,6 +274,7 @@ h1 {
 }
 
 .camera-actions,
+.text-camera-actions,
 .reading-actions {
   display: flex;
   gap: 9px;
@@ -398,7 +471,6 @@ select {
 }
 
 .text-scanner-card {
-  margin-top: 18px;
   padding: 20px;
 }
 
@@ -411,6 +483,19 @@ select {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.text-camera-view {
+  min-height: min(62vh, 500px);
+  min-height: min(62dvh, 500px);
+}
+
+.text-camera-actions {
+  flex-wrap: wrap;
+}
+
+.text-camera-actions .button {
+  flex: 1 1 0;
 }
 
 .text-scan-actions {
@@ -512,15 +597,18 @@ select {
     min-height: min(62dvh, 430px);
   }
 
-  .camera-actions {
+  .camera-actions,
+  .text-camera-actions {
     flex-wrap: wrap;
   }
 
-  .camera-actions .button {
+  .camera-actions .button,
+  .text-camera-actions .button {
     flex: 1 1 calc(50% - 5px);
   }
 
-  .camera-actions .button-primary {
+  .camera-actions .button-primary,
+  .text-camera-actions .button-primary {
     flex-basis: 100%;
   }
 
@@ -556,7 +644,8 @@ select {
     width: calc(100% - 22px);
   }
 
-  .camera-actions .button {
+  .camera-actions .button,
+  .text-camera-actions .button {
     padding-inline: 8px;
     font-size: 13px;
   }
