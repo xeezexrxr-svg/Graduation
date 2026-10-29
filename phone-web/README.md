@@ -6,7 +6,7 @@ A separate, mobile-friendly ClearView website. The existing Windows desktop app 
 
 - Uses the phone's rear camera or photo picker to capture one image.
 - Provides a separate Text scanner screen from the three-line feature menu, with its own camera capture and photo picker.
-- Scans full-page English and Traditional Chinese text locally in the browser, then lets users edit or select recognized text to copy or read aloud.
+- Scans full-page English and Traditional Chinese text locally in the browser, then lets users edit or select recognized text to copy or read aloud with the current word highlighted when the browser reports speech boundaries.
 - Sends the resized image to a Pages Function, which asks Cloudflare Workers AI's LLaVA model for a free-form description of the specific visible item, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label.
 - Shows the generated item description, recognized label text, and any product identification based on that text, then reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
 - Does not save photos. Images are sent to Cloudflare for inference.

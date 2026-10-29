@@ -164,6 +164,13 @@
             placeholder="Your scanned text will appear here. You can edit it and select any word or passage."
             aria-describedby="textScanStatus"
           ></textarea>
+          <div
+            id="textReadingPreview"
+            class="recognized-text text-reading-preview"
+            role="region"
+            aria-label="Text being read aloud"
+            hidden
+          ></div>
           <p class="status-message" id="textScanStatus" role="status" aria-live="polite">
             Start the camera or choose a photo to scan text.
           </p>

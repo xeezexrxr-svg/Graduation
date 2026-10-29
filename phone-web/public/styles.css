@@ -546,6 +546,12 @@ select {
   touch-action: manipulation;
 }
 
+.text-reading-preview {
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .recognized-text::placeholder {
   color: #9294ac;
 }

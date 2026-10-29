@@ -32,6 +32,7 @@ const readSelectedTextButton = document.querySelector("#readSelectedTextButton")
 const readAllTextButton = document.querySelector("#readAllTextButton");
 const stopTextButton = document.querySelector("#stopTextButton");
 const recognizedText = document.querySelector("#recognizedText");
+const textReadingPreview = document.querySelector("#textReadingPreview");
 const textScanStatus = document.querySelector("#textScanStatus");
 const fontSizeInput = document.querySelector("#fontSize");
 const letterSpacingInput = document.querySelector("#letterSpacing");
@@ -48,6 +49,8 @@ let textSelectedImageUrl = null;
 let currentDescription = "";
 let wordElements = [];
 let activeWord = null;
+let textPreviewWords = [];
+let activeTextPreviewWord = null;
 let speechVoices = [];
 let textOcrWorkerPromise = null;
 let textScanInProgress = false;
@@ -427,6 +430,89 @@ function sentenceRangeAt(text, index) {
   return { start: 0, end: text.length };
 }
 
+function renderTextReadingPreview(text) {
+  textReadingPreview.style.height = `${recognizedText.offsetHeight}px`;
+  const wordPattern = /\p{Script=Han}|[\p{L}\p{N}_]+(?:['’][\p{L}\p{N}_]+)*/gu;
+  const words = [...text.matchAll(wordPattern)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+    text: match[0],
+  }));
+  const sentences = [];
+  textPreviewWords = [];
+  textReadingPreview.replaceChildren();
+  textReadingPreview.scrollTop = 0;
+
+  for (const word of words) {
+    const range = sentenceRangeAt(text, word.start);
+    let sentence = sentences.find((item) => item.start === range.start && item.end === range.end);
+    if (!sentence) {
+      sentence = { ...range, element: document.createElement("span") };
+      sentence.element.className = "reading-sentence";
+      sentences.push(sentence);
+    }
+    const element = document.createElement("span");
+    element.textContent = word.text;
+    sentence.element.append(element);
+    textPreviewWords.push({ ...word, element, sentenceElement: sentence.element });
+  }
+
+  let cursor = 0;
+  for (const sentence of sentences.sort((left, right) => left.start - right.start)) {
+    if (sentence.start > cursor) {
+      textReadingPreview.append(document.createTextNode(text.slice(cursor, sentence.start)));
+    }
+    const sentenceWords = textPreviewWords.filter((word) => word.sentenceElement === sentence.element);
+    let sentenceCursor = sentence.start;
+    for (const word of sentenceWords) {
+      if (word.start > sentenceCursor) {
+        sentence.element.insertBefore(
+          document.createTextNode(text.slice(sentenceCursor, word.start)),
+          word.element,
+        );
+      }
+      sentenceCursor = word.end;
+    }
+    if (sentenceCursor < sentence.end) {
+      sentence.element.append(document.createTextNode(text.slice(sentenceCursor, sentence.end)));
+    }
+    textReadingPreview.append(sentence.element);
+    cursor = sentence.end;
+  }
+  if (cursor < text.length) {
+    textReadingPreview.append(document.createTextNode(text.slice(cursor)));
+  }
+  recognizedText.hidden = true;
+  textReadingPreview.hidden = false;
+}
+
+function updateTextReadingBoundary(charIndex) {
+  const word = textPreviewWords.find((item) => charIndex >= item.start && charIndex < item.end)
+    ?? textPreviewWords.find((item) => item.start >= charIndex);
+  if (!word || word === activeTextPreviewWord) return;
+  if (activeTextPreviewWord) {
+    activeTextPreviewWord.element.classList.remove("reading-word");
+    activeTextPreviewWord.sentenceElement.classList.remove("reading-sentence-active");
+  }
+  activeTextPreviewWord = word;
+  word.element.classList.add("reading-word");
+  word.sentenceElement.classList.add("reading-sentence-active");
+  word.element.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function clearTextReadingPreview() {
+  if (activeTextPreviewWord) {
+    activeTextPreviewWord.element.classList.remove("reading-word");
+    activeTextPreviewWord.sentenceElement.classList.remove("reading-sentence-active");
+  }
+  activeTextPreviewWord = null;
+  textPreviewWords = [];
+  textReadingPreview.replaceChildren();
+  textReadingPreview.style.height = "";
+  textReadingPreview.hidden = true;
+  recognizedText.hidden = false;
+}
+
 function renderDescription(label, explanation, recognizedText = "", product = "") {
   currentDescription = `This is ${label}. ${explanation}`;
   if (product) {
@@ -584,6 +670,7 @@ function stopReading() {
   }
   if (stoppedMode === "text") {
     stopTextButton.disabled = true;
+    clearTextReadingPreview();
     updateTextScanControls();
     setTextScanStatus("Reading stopped.", "info");
   } else if (stoppedMode === "description") {
@@ -741,6 +828,7 @@ function readScannerText(selectedOnly) {
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = Number(speechRateInput.value);
   if (selectedVoice) utterance.voice = selectedVoice;
+  renderTextReadingPreview(recognizedText.value);
   utterance.onboundary = (event) => {
     if (requestId !== speechRequestId || activeSpeechMode !== "text") return;
     const start = Math.max(0, Math.min(text.length, event.charIndex || 0));
@@ -751,11 +839,13 @@ function readScannerText(selectedOnly) {
       sourceStart + start,
       Math.min(sourceStart + text.length, sourceStart + start + boundaryLength),
     );
+    updateTextReadingBoundary(sourceStart + start);
   };
   utterance.onend = () => {
     if (requestId !== speechRequestId || activeSpeechMode !== "text") return;
     activeSpeechMode = null;
     stopTextButton.disabled = true;
+    clearTextReadingPreview();
     updateTextScanControls();
     setTextScanStatus("Finished reading the selected text.", "success");
   };
@@ -763,6 +853,7 @@ function readScannerText(selectedOnly) {
     if (requestId !== speechRequestId || activeSpeechMode !== "text") return;
     activeSpeechMode = null;
     stopTextButton.disabled = true;
+    clearTextReadingPreview();
     updateTextScanControls();
     if (event.error !== "canceled" && event.error !== "interrupted") {
       setTextScanStatus("The browser could not read this text aloud.", "error");
