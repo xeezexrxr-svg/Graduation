@@ -44,6 +44,9 @@ MODEL_FILE = "yolov8s-worldv2.pt"
 CLOUD_VISION_API_URL = "https://graduation-6j1.pages.dev/api/identify"
 MIN_CONFIDENCE = 0.30
 PREVIEW_SIZE = (800, 480)
+_OCR_READER = None
+_OCR_READER_LOCK = threading.Lock()
+_OCR_INFERENCE_LOCK = threading.Lock()
 
 DEFAULT_DESCRIPTIONS = {
     "bottle": "It can hold drinks, such as water.",
@@ -190,6 +193,20 @@ def load_descriptions():
     return descriptions, ""
 
 
+def get_ocr_reader():
+    global _OCR_READER
+    with _OCR_READER_LOCK:
+        if _OCR_READER is None:
+            import easyocr
+
+            _OCR_READER = easyocr.Reader(
+                ["en", "ch_tra"],
+                gpu=False,
+                verbose=False,
+            )
+        return _OCR_READER
+
+
 class CameraWorker(threading.Thread):
     """Capture frames away from Tk's UI thread."""
 
@@ -250,6 +267,7 @@ class AnalysisWorker(threading.Thread):
     """Load YOLO once, then process requested frames off the UI thread."""
 
     HUMAN_LABELS = {"person", "people", "hand"}
+    WEARABLE_LABELS = {"glasses", "hat", "headphones", "shirt", "shoes"}
 
     def __init__(self, candidate_names):
         super().__init__(daemon=True, name="analysis-worker")
@@ -273,6 +291,59 @@ class AnalysisWorker(threading.Thread):
             if detection["label"].strip().lower().replace("_", " ")
             not in cls.HUMAN_LABELS
         ]
+        non_wearables = [
+            detection
+            for detection in object_detections
+            if detection["label"].strip().lower().replace("_", " ")
+            not in cls.WEARABLE_LABELS
+        ]
+        human_detections = [
+            detection
+            for detection in detections
+            if detection["label"].strip().lower().replace("_", " ")
+            in cls.HUMAN_LABELS
+        ]
+
+        def overlaps(first, second):
+            first_x1, first_y1, first_x2, first_y2 = first["coordinates"]
+            second_x1, second_y1, second_x2, second_y2 = second["coordinates"]
+            intersection_width = max(
+                0, min(first_x2, second_x2) - max(first_x1, second_x1)
+            )
+            intersection_height = max(
+                0, min(first_y2, second_y2) - max(first_y1, second_y1)
+            )
+            smaller_area = min(
+                max(0, first_x2 - first_x1) * max(0, first_y2 - first_y1),
+                max(0, second_x2 - second_x1) * max(0, second_y2 - second_y1),
+            )
+            return smaller_area > 0 and (
+                intersection_width * intersection_height / smaller_area >= 0.1
+            )
+
+        if non_wearables and human_detections:
+            held_objects = [
+                detection
+                for detection in non_wearables
+                if any(overlaps(detection, person) for person in human_detections)
+            ]
+            if held_objects:
+                object_detections = held_objects
+        elif non_wearables:
+            wearable_detections = [
+                detection
+                for detection in object_detections
+                if detection["label"].strip().lower().replace("_", " ")
+                in cls.WEARABLE_LABELS
+            ]
+            overlapping_objects = [
+                detection
+                for detection in non_wearables
+                if any(overlaps(detection, wearable) for wearable in wearable_detections)
+            ]
+            if overlapping_objects:
+                object_detections = overlapping_objects
+
         return max(
             object_detections or detections,
             key=lambda detection: detection["confidence"],
@@ -368,9 +439,7 @@ class AnalysisWorker(threading.Thread):
 
         self.events.put(("ocr_loading", None))
         try:
-            import easyocr
-
-            ocr_reader = easyocr.Reader(["en", "ch_tra"], gpu=False, verbose=False)
+            ocr_reader = get_ocr_reader()
         except Exception as error:
             ocr_error = (
                 "Text reading is unavailable. Install the project requirements "
@@ -397,10 +466,24 @@ class AnalysisWorker(threading.Thread):
                     continue
 
                 detections = self._read_detections(results[0])
-                detection = self._select_detection(detections)
-                if detection["label"].strip().lower().replace("_", " ") in self.HUMAN_LABELS:
+                human_detections = [
+                    detection
+                    for detection in detections
+                    if detection["label"].strip().lower().replace("_", " ")
+                    in self.HUMAN_LABELS
+                ]
+                if human_detections:
+                    hand_detections = [
+                        detection
+                        for detection in human_detections
+                        if detection["label"].strip().lower().replace("_", " ") == "hand"
+                    ]
+                    context_detection = max(
+                        hand_detections or human_detections,
+                        key=lambda candidate: candidate["confidence"],
+                    )
                     frame_height, frame_width = frame.shape[:2]
-                    x1, y1, x2, y2 = detection["coordinates"]
+                    x1, y1, x2, y2 = context_detection["coordinates"]
                     padding_x = max(24, int((x2 - x1) * 0.15))
                     padding_y = max(24, int((y2 - y1) * 0.15))
                     crop_x1 = max(0, int(x1) - padding_x)
@@ -419,13 +502,8 @@ class AnalysisWorker(threading.Thread):
                                 crop_results[0],
                                 offset=(crop_x1, crop_y1),
                             )
-                            crop_detection = self._select_detection(crop_detections)
-                            if (
-                                crop_detection
-                                and crop_detection["label"].strip().lower().replace("_", " ")
-                                not in self.HUMAN_LABELS
-                            ):
-                                detection = crop_detection
+                            detections.extend(crop_detections)
+                detection = self._select_detection(detections)
                 recognized_text = ""
                 detection_ocr_error = ocr_error
                 if ocr_reader is not None:
@@ -439,10 +517,11 @@ class AnalysisWorker(threading.Thread):
                         crop_x2 = min(frame_width, int(x2) + padding_x)
                         crop_y2 = min(frame_height, int(y2) + padding_y)
                         if crop_x2 > crop_x1 and crop_y2 > crop_y1:
-                            text_results = ocr_reader.readtext(
-                                frame[crop_y1:crop_y2, crop_x1:crop_x2],
-                                detail=1,
-                            )
+                            with _OCR_INFERENCE_LOCK:
+                                text_results = ocr_reader.readtext(
+                                    frame[crop_y1:crop_y2, crop_x1:crop_x2],
+                                    detail=1,
+                                )
                             text_parts = []
                             seen_text = set()
                             for text_result in text_results:
@@ -654,6 +733,170 @@ class SpeechWorker(threading.Thread):
         return word_positions
 
 
+class ScannerWorker(threading.Thread):
+    """Run full-page English and Traditional Chinese OCR off the UI thread."""
+
+    def __init__(self):
+        super().__init__(daemon=True, name="text-scanner-worker")
+        self.requests = queue.Queue()
+        self.events = queue.Queue()
+
+    def scan(self, frame, brightness):
+        self.requests.put((frame, brightness))
+
+    def stop(self):
+        self.requests.put(None)
+
+    @staticmethod
+    def _format_results(results):
+        items = []
+        confidences = []
+        for result in results:
+            if len(result) < 3:
+                continue
+            box, text, confidence = result
+            text = text.strip()
+            if not text:
+                continue
+            points = [(float(point[0]), float(point[1])) for point in box]
+            top = min(point[1] for point in points)
+            bottom = max(point[1] for point in points)
+            items.append({
+                "text": text,
+                "left": min(point[0] for point in points),
+                "top": top,
+                "bottom": bottom,
+                "center": (top + bottom) / 2,
+            })
+            confidences.append(float(confidence))
+
+        items.sort(key=lambda item: (item["center"], item["left"]))
+        lines = []
+        for item in items:
+            item_height = max(1.0, item["bottom"] - item["top"])
+            line = next(
+                (
+                    candidate
+                    for candidate in lines
+                    if abs(item["center"] - candidate["center"])
+                    <= max(item_height, candidate["height"]) * 0.55
+                ),
+                None,
+            )
+            if line is None:
+                lines.append({
+                    "center": item["center"],
+                    "height": item_height,
+                    "items": [item],
+                })
+            else:
+                line["items"].append(item)
+                line["center"] = sum(
+                    entry["center"] for entry in line["items"]
+                ) / len(line["items"])
+                line["height"] = max(line["height"], item_height)
+
+        formatted_lines = []
+        for line in sorted(lines, key=lambda candidate: candidate["center"]):
+            line_items = sorted(line["items"], key=lambda item: item["left"])
+            words = [line_items[0]["text"]]
+            for item in line_items[1:]:
+                previous = words[-1]
+                has_cjk = re.search(r"[\u3400-\u9fff]", previous[-1:] + item["text"][:1])
+                words.append((" " if not has_cjk else "") + item["text"])
+            formatted_lines.append("".join(words))
+
+        average_confidence = (
+            sum(confidences) / len(confidences) if confidences else 0.0
+        )
+        return "\n".join(formatted_lines), average_confidence, len(items)
+
+    @staticmethod
+    def _enhance(frame):
+        height, width = frame.shape[:2]
+        scale = min(2.0, max(1.0, 1800 / max(height, width)))
+        if scale > 1:
+            frame = cv2.resize(
+                frame,
+                (round(width * scale), round(height * scale)),
+                interpolation=cv2.INTER_CUBIC,
+            )
+
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        lightness, green_red, blue_yellow = cv2.split(lab)
+        contrast = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        lightness = contrast.apply(lightness)
+        enhanced = cv2.cvtColor(
+            cv2.merge((lightness, green_red, blue_yellow)),
+            cv2.COLOR_LAB2BGR,
+        )
+        softened = cv2.GaussianBlur(enhanced, (0, 0), 1.0)
+        return cv2.addWeighted(enhanced, 1.35, softened, -0.35, 0)
+
+    def run(self):
+        try:
+            reader = get_ocr_reader()
+        except Exception as error:
+            self.events.put((
+                "scanner_error",
+                "Could not load English and Traditional Chinese text recognition. "
+                f"Check the EasyOCR installation and model files: {error}",
+            ))
+            return
+
+        self.events.put(("scanner_ready", None))
+        while True:
+            request = self.requests.get()
+            if request is None:
+                return
+
+            frame, brightness = request
+            try:
+                if frame is None or frame.size == 0:
+                    raise ValueError("The selected image is empty.")
+                if brightness != 100:
+                    frame = cv2.convertScaleAbs(
+                        frame,
+                        alpha=brightness / 100.0,
+                        beta=0,
+                    )
+
+                scan_image = self._enhance(frame)
+                with _OCR_INFERENCE_LOCK:
+                    results = reader.readtext(
+                        scan_image,
+                        detail=1,
+                        paragraph=False,
+                        rotation_info=[90, 270],
+                        contrast_ths=0.1,
+                        adjust_contrast=0.7,
+                        text_threshold=0.65,
+                        low_text=0.35,
+                        link_threshold=0.4,
+                        canvas_size=2560,
+                        mag_ratio=1.0,
+                    )
+                    if not results:
+                        results = reader.readtext(
+                            frame,
+                            detail=1,
+                            paragraph=False,
+                            rotation_info=[90, 270],
+                            canvas_size=2560,
+                        )
+                text, confidence, region_count = self._format_results(results)
+                self.events.put((
+                    "scan_complete",
+                    {
+                        "text": text,
+                        "confidence": confidence,
+                        "region_count": region_count,
+                    },
+                ))
+            except Exception as error:
+                self.events.put(("scanner_error", f"Text scanning failed: {error}"))
+
+
 class DyslexiaCameraApp:
     def __init__(self, root):
         self.root = root
@@ -692,9 +935,11 @@ class DyslexiaCameraApp:
         self.speech_rate = tk.DoubleVar(value=1.0)
         self.volume = tk.IntVar(value=100)
         self.voice_name = tk.StringVar(value="Default")
+        self.brightness = tk.IntVar(value=100)
         self.auto_speak = tk.BooleanVar(value=True)
         self.current_sentence = "Point the camera at an object, then choose Identify object."
         self.speech_request_id = 0
+        self.speech_target = "description"
         self.active_sentence_span = None
         self.active_word_span = None
         self.typography_expanded = True
@@ -708,6 +953,16 @@ class DyslexiaCameraApp:
         self.photo_mode = False
         self.is_analyzing = False
         self.closing = False
+        self.scanner_window = None
+        self.scanner_worker = None
+        self.scanner_preview_image = None
+        self.scanner_status = None
+        self.scanner_text = None
+        self.scanner_capture_button = None
+        self.scanner_photo_button = None
+        self.scanner_preview = None
+        self.scanner_ready = False
+        self.brightness_window = None
 
         self.camera = CameraWorker()
         self.analysis = AnalysisWorker(list(self.descriptions))
@@ -739,22 +994,60 @@ class DyslexiaCameraApp:
         )
         right.grid(row=0, column=1, sticky="nsew", padx=(0, 18), pady=18)
 
+        title_bar = tk.Frame(left, bg=PALETTE["background"])
+        title_bar.pack(fill="x", padx=4, pady=(0, 12))
+        menu_button = tk.Menubutton(
+            title_bar,
+            text="☰",
+            font=("Arial", 23, "bold"),
+            bg=PALETTE["background"],
+            fg=PALETTE["text"],
+            activebackground=PALETTE["accent_hover"],
+            activeforeground=PALETTE["text"],
+            relief="flat",
+            bd=0,
+            padx=8,
+            cursor="hand2",
+        )
+        app_menu = tk.Menu(
+            menu_button,
+            tearoff=False,
+            bg=PALETTE["panel"],
+            fg=PALETTE["text"],
+            activebackground=PALETTE["accent"],
+            activeforeground="#ffffff",
+        )
+        app_menu.add_command(
+            label="Object assistant",
+            command=self.root.lift,
+        )
+        app_menu.add_command(
+            label="Text scanner",
+            command=self.open_text_scanner,
+        )
+        app_menu.add_command(
+            label="Set camera brightness…",
+            command=self.open_brightness_settings,
+        )
+        menu_button.configure(menu=app_menu)
+        menu_button.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=(0, 8))
+        title_bar.grid_columnconfigure(1, weight=1)
         tk.Label(
-            left,
+            title_bar,
             text="ClearView",
             bg=PALETTE["background"],
             fg=PALETTE["text"],
             font=("Arial", 26, "bold"),
             anchor="w",
-        ).pack(fill="x", padx=4, pady=(0, 4))
+        ).grid(row=0, column=1, sticky="ew")
         tk.Label(
-            left,
+            title_bar,
             text="A camera assistant for everyday objects",
             bg=PALETTE["background"],
             fg=PALETTE["muted"],
             font=("Arial", 14),
             anchor="w",
-        ).pack(fill="x", padx=4, pady=(0, 12))
+        ).grid(row=1, column=1, sticky="ew")
 
         self.preview = tk.Label(
             left,
@@ -1255,6 +1548,444 @@ class DyslexiaCameraApp:
             wraplength=260,
         )
 
+    def open_brightness_settings(self):
+        if self.brightness_window is not None and self.brightness_window.winfo_exists():
+            self.brightness_window.lift()
+            return
+
+        window = tk.Toplevel(self.root)
+        self.brightness_window = window
+        window.title("Camera brightness")
+        window.geometry("420x190")
+        window.resizable(False, False)
+        window.transient(self.root)
+        window.configure(bg=PALETTE["background"])
+        window.protocol(
+            "WM_DELETE_WINDOW",
+            lambda: self._close_brightness_settings(window),
+        )
+        tk.Label(
+            window,
+            text="Camera image brightness",
+            bg=PALETTE["background"],
+            fg=PALETTE["text"],
+            font=("Arial", 16, "bold"),
+        ).pack(anchor="w", padx=20, pady=(18, 4))
+        value_label = tk.Label(
+            window,
+            text=f"{self.brightness.get()}%",
+            bg=PALETTE["background"],
+            fg=PALETTE["accent"],
+            font=("Arial", 12, "bold"),
+        )
+        value_label.pack(anchor="w", padx=20)
+        tk.Scale(
+            window,
+            from_=50,
+            to=150,
+            resolution=5,
+            orient="horizontal",
+            variable=self.brightness,
+            command=lambda value: (
+                self._on_brightness_change(value),
+                value_label.configure(text=f"{self.brightness.get()}%"),
+            ),
+            bg=PALETTE["background"],
+            fg=PALETTE["text"],
+            troughcolor="#343b52",
+            activebackground=PALETTE["accent"],
+            highlightthickness=0,
+            showvalue=False,
+            font=("Arial", 10),
+            length=360,
+            bd=0,
+        ).pack(fill="x", padx=20, pady=(4, 8))
+        tk.Label(
+            window,
+            text="Adjusts the camera preview and images used for scanning.",
+            bg=PALETTE["background"],
+            fg=PALETTE["muted"],
+            font=("Arial", 10),
+        ).pack(anchor="w", padx=20)
+
+    def _close_brightness_settings(self, window):
+        if self.brightness_window is window:
+            self.brightness_window = None
+        window.destroy()
+
+    def _on_brightness_change(self, value):
+        self.brightness.set(int(float(value)))
+
+    def open_text_scanner(self):
+        if self.scanner_window is not None and self.scanner_window.winfo_exists():
+            self.scanner_window.lift()
+            return
+
+        window = tk.Toplevel(self.root)
+        self.scanner_window = window
+        window.title("ClearView - Text scanner")
+        window.geometry("1100x820")
+        window.minsize(820, 620)
+        window.configure(bg=PALETTE["background"])
+        window.protocol("WM_DELETE_WINDOW", self._close_text_scanner)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(3, weight=3)
+        window.grid_rowconfigure(4, weight=2)
+
+        tk.Label(
+            window,
+            text="Text scanner",
+            bg=PALETTE["background"],
+            fg=PALETTE["text"],
+            font=("Arial", 22, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 2))
+        tk.Label(
+            window,
+            text="Capture a clear, well-lit page or choose a photo. English and Traditional Chinese are supported.",
+            bg=PALETTE["background"],
+            fg=PALETTE["muted"],
+            font=("Arial", 10),
+            anchor="w",
+            wraplength=1000,
+        ).grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 10))
+
+        controls = tk.Frame(window, bg=PALETTE["background"])
+        controls.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 8))
+        self.scanner_capture_button = self._button(
+            controls,
+            "Capture & scan",
+            self.capture_and_scan,
+        )
+        self.scanner_capture_button.grid(row=0, column=0, padx=(0, 6), pady=2)
+        self.scanner_photo_button = self._button(
+            controls,
+            "Choose a photo",
+            self.choose_scan_photo,
+            secondary=True,
+        )
+        self.scanner_photo_button.grid(row=0, column=1, padx=6, pady=2)
+        self.scanner_capture_button.configure(state="disabled")
+        self.scanner_photo_button.configure(state="disabled")
+        tk.Button(
+            controls,
+            text="Copy selected",
+            command=lambda: self.copy_scanned_text(selected_only=True),
+            font=("Arial", 10, "bold"),
+            bg="#262d42",
+            fg=PALETTE["text"],
+            activebackground=PALETTE["accent_hover"],
+            activeforeground=PALETTE["text"],
+            bd=0,
+            padx=12,
+            pady=9,
+            cursor="hand2",
+        ).grid(row=0, column=2, padx=6, pady=2)
+        tk.Button(
+            controls,
+            text="Copy all",
+            command=lambda: self.copy_scanned_text(selected_only=False),
+            font=("Arial", 10, "bold"),
+            bg="#262d42",
+            fg=PALETTE["text"],
+            activebackground=PALETTE["accent_hover"],
+            activeforeground=PALETTE["text"],
+            bd=0,
+            padx=12,
+            pady=9,
+            cursor="hand2",
+        ).grid(row=0, column=3, padx=6, pady=2)
+        tk.Button(
+            controls,
+            text="Read selected",
+            command=lambda: self.read_scanned_text(selected_only=True),
+            font=("Arial", 10, "bold"),
+            bg=PALETTE["accent"],
+            fg="#202020",
+            activebackground=PALETTE["accent_hover"],
+            activeforeground="#202020",
+            bd=0,
+            padx=12,
+            pady=9,
+            cursor="hand2",
+        ).grid(row=1, column=0, padx=(0, 6), pady=2, sticky="w")
+        tk.Button(
+            controls,
+            text="Read all",
+            command=lambda: self.read_scanned_text(selected_only=False),
+            font=("Arial", 10, "bold"),
+            bg=PALETTE["accent"],
+            fg="#202020",
+            activebackground=PALETTE["accent_hover"],
+            activeforeground="#202020",
+            bd=0,
+            padx=12,
+            pady=9,
+            cursor="hand2",
+        ).grid(row=1, column=1, padx=6, pady=2, sticky="w")
+
+        self.scanner_preview = tk.Label(
+            window,
+            text="Loading English and Traditional Chinese text recognition…",
+            bg=PALETTE["preview"],
+            fg=PALETTE["text"],
+            font=("Arial", 14),
+            relief="solid",
+            bd=1,
+        )
+        self.scanner_preview.grid(
+            row=3,
+            column=0,
+            sticky="nsew",
+            padx=18,
+            pady=(0, 10),
+        )
+        results_frame = tk.Frame(window, bg=PALETTE["panel"], padx=10, pady=8)
+        results_frame.grid(row=4, column=0, sticky="nsew", padx=18)
+        results_frame.grid_columnconfigure(0, weight=1)
+        results_frame.grid_rowconfigure(1, weight=1)
+        tk.Label(
+            results_frame,
+            text="RECOGNIZED TEXT — click here to edit or select words",
+            bg=PALETTE["panel"],
+            fg=PALETTE["accent"],
+            font=("Arial", 10, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        self.scanner_text = tk.Text(
+            results_frame,
+            bg="#171d2d",
+            fg=PALETTE["text"],
+            insertbackground=PALETTE["text"],
+            font=("Arial", 15),
+            wrap="word",
+            relief="flat",
+            padx=10,
+            pady=8,
+            undo=True,
+        )
+        self.scanner_text.grid(row=1, column=0, sticky="nsew")
+        scrollbar = tk.Scrollbar(
+            results_frame,
+            orient="vertical",
+            command=self.scanner_text.yview,
+            bg="#262d42",
+            troughcolor=PALETTE["panel"],
+            activebackground=PALETTE["accent"],
+            highlightthickness=0,
+            bd=0,
+        )
+        scrollbar.grid(row=1, column=1, sticky="ns")
+        self.scanner_text.configure(yscrollcommand=scrollbar.set)
+        self.scanner_text.bind("<Control-a>", self._select_all_scanned_text)
+        self.scanner_status = tk.Label(
+            window,
+            text="Loading text-recognition models. This can take a little while the first time.",
+            bg=PALETTE["background"],
+            fg=PALETTE["muted"],
+            font=("Arial", 10),
+            anchor="w",
+            justify="left",
+            wraplength=1000,
+        )
+        self.scanner_status.grid(
+            row=5,
+            column=0,
+            sticky="ew",
+            padx=18,
+            pady=(8, 14),
+        )
+
+        self.scanner_ready = False
+        self.scanner_worker = ScannerWorker()
+        self.scanner_worker.start()
+
+    def _close_text_scanner(self):
+        if self.scanner_worker is not None:
+            self.scanner_worker.stop()
+            self.scanner_worker = None
+        self.scanner_ready = False
+        if self.scanner_window is not None:
+            self.scanner_window.destroy()
+        self.scanner_window = None
+        self.scanner_status = None
+        self.scanner_text = None
+        self.scanner_preview = None
+        self.scanner_capture_button = None
+        self.scanner_photo_button = None
+        self.scanner_preview_image = None
+
+    def capture_and_scan(self):
+        frame = self.camera.get_frame()
+        if frame is None:
+            if self.scanner_status is not None:
+                self.scanner_status.configure(
+                    text="The camera has no image yet. Wait for the camera or choose a photo.",
+                    fg=PALETTE["warning"],
+                )
+            return
+        self._scan_text_image(frame)
+
+    def choose_scan_photo(self):
+        path = filedialog.askopenfilename(
+            parent=self.scanner_window,
+            title="Choose a page to scan",
+            filetypes=(
+                ("Image files", "*.jpg *.jpeg *.png *.bmp *.webp *.tif *.tiff"),
+                ("All files", "*.*"),
+            ),
+        )
+        if not path:
+            return
+        frame = cv2.imread(path)
+        if frame is None:
+            self.scanner_status.configure(
+                text="That image could not be opened. Choose a different photo.",
+                fg=PALETTE["warning"],
+            )
+            return
+        self._scan_text_image(frame)
+
+    def _scan_text_image(self, frame):
+        if self.scanner_worker is None or not self.scanner_ready:
+            self.scanner_status.configure(
+                text="Text recognition is still loading. Please wait, then try again.",
+                fg=PALETTE["muted"],
+            )
+            return
+        self._show_scanner_image(frame)
+        self.scanner_capture_button.configure(state="disabled")
+        self.scanner_photo_button.configure(state="disabled")
+        self.scanner_status.configure(
+            text="Enhancing the page and recognizing text…",
+            fg=PALETTE["muted"],
+        )
+        self.scanner_worker.scan(frame.copy(), self.brightness.get())
+
+    def _show_scanner_image(self, frame):
+        if Image is None or ImageTk is None:
+            self.scanner_preview.configure(
+                image="",
+                text="Install Pillow to preview the scanned image.",
+            )
+            return
+        display_frame = frame
+        if self.brightness.get() != 100:
+            display_frame = cv2.convertScaleAbs(
+                frame,
+                alpha=self.brightness.get() / 100.0,
+                beta=0,
+            )
+        height, width = display_frame.shape[:2]
+        available_width = max(100, self.scanner_preview.winfo_width() - 12)
+        available_height = max(100, self.scanner_preview.winfo_height() - 12)
+        if available_width < 200 or available_height < 150:
+            available_width, available_height = 1020, 340
+        scale = min(available_width / width, available_height / height)
+        resized = cv2.resize(
+            display_frame,
+            (max(1, int(width * scale)), max(1, int(height * scale))),
+        )
+        rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        self.scanner_preview_image = ImageTk.PhotoImage(Image.fromarray(rgb_frame))
+        self.scanner_preview.configure(image=self.scanner_preview_image, text="")
+
+    def _select_all_scanned_text(self, _event):
+        _event.widget.tag_add("sel", "1.0", "end-1c")
+        _event.widget.mark_set("insert", "1.0")
+        _event.widget.see("insert")
+        return "break"
+
+    def _scanner_text_value(self, selected_only):
+        if self.scanner_text is None:
+            return ""
+        if selected_only:
+            try:
+                return self.scanner_text.get("sel.first", "sel.last").strip()
+            except tk.TclError:
+                return ""
+        return self.scanner_text.get("1.0", "end-1c").strip()
+
+    def copy_scanned_text(self, selected_only):
+        text = self._scanner_text_value(selected_only)
+        if not text:
+            self.scanner_status.configure(
+                text="Select some text first, or use Copy all.",
+                fg=PALETTE["warning"],
+            )
+            return
+        self.scanner_window.clipboard_clear()
+        self.scanner_window.clipboard_append(text)
+        self.scanner_status.configure(
+            text="Selected text copied." if selected_only else "All scanned text copied.",
+            fg=PALETTE["success"],
+        )
+
+    def read_scanned_text(self, selected_only):
+        text = self._scanner_text_value(selected_only)
+        if not text:
+            self.scanner_status.configure(
+                text="Select the text to read, or choose Read all.",
+                fg=PALETTE["warning"],
+            )
+            return
+        self.speech_request_id += 1
+        self.speech_target = "scanner"
+        self.active_sentence_span = None
+        self.active_word_span = None
+        self._render_description()
+        self.speech.speak(
+            text,
+            self.speech_rate.get(),
+            self.voice_name.get(),
+            self.volume.get(),
+            self.speech_request_id,
+        )
+        self.scanner_status.configure(
+            text="Reading selected text…" if selected_only else "Reading all scanned text…",
+            fg=PALETTE["muted"],
+        )
+
+    def _handle_scanner_event(self, event, payload):
+        if self.scanner_window is None or self.scanner_status is None:
+            return
+        if event == "scanner_ready":
+            self.scanner_ready = True
+            self.scanner_capture_button.configure(state="normal")
+            self.scanner_photo_button.configure(state="normal")
+            self.scanner_status.configure(
+                text="Ready. Hold the page steady, keep the full text in view, and avoid glare.",
+                fg=PALETTE["success"],
+            )
+        elif event == "scanner_error":
+            if self.scanner_ready:
+                self.scanner_capture_button.configure(state="normal")
+                self.scanner_photo_button.configure(state="normal")
+            self.scanner_status.configure(text=payload, fg="#ff8a80")
+        elif event == "scan_complete":
+            self.scanner_capture_button.configure(state="normal")
+            self.scanner_photo_button.configure(state="normal")
+            self.scanner_text.delete("1.0", "end")
+            self.scanner_text.insert("1.0", payload["text"])
+            if not payload["region_count"]:
+                self.scanner_status.configure(
+                    text="No text was found. Try a sharper, closer, well-lit page without glare.",
+                    fg=PALETTE["warning"],
+                )
+                return
+            confidence = payload["confidence"]
+            status_color = (
+                PALETTE["warning"] if confidence < 0.5 else PALETTE["success"]
+            )
+            self.scanner_status.configure(
+                text=(
+                    f"Found {payload['region_count']} text regions "
+                    f"(average OCR confidence {confidence:.0%}). "
+                    "Proofread the result; recognition can make mistakes."
+                ),
+                fg=status_color,
+            )
+
     def _set_status(self, message, kind="info"):
         if self.model_error and kind != "error":
             message = self.model_error
@@ -1410,13 +2141,19 @@ class DyslexiaCameraApp:
         self.speech_rate.set(rate)
         self.speed_value.set(f"{rate:.1f}×")
 
-    def _show_frame(self, frame):
+    def _show_frame(self, frame, adjust_brightness=True):
         if Image is None or ImageTk is None:
             self.camera_status.configure(
                 text="Install Pillow to show the camera preview. Identification can still work."
             )
             return
 
+        if adjust_brightness and self.brightness.get() != 100:
+            frame = cv2.convertScaleAbs(
+                frame,
+                alpha=self.brightness.get() / 100.0,
+                beta=0,
+            )
         height, width = frame.shape[:2]
         available_width = self.preview.winfo_width() - 16
         available_height = self.preview.winfo_height() - 16
@@ -1442,6 +2179,11 @@ class DyslexiaCameraApp:
         self._drain_events(self.camera.events, self._handle_camera_event)
         self._drain_events(self.analysis.events, self._handle_analysis_event)
         self._drain_events(self.speech.events, self._handle_speech_event)
+        if self.scanner_worker is not None:
+            self._drain_events(
+                self.scanner_worker.events,
+                self._handle_scanner_event,
+            )
         self.root.after(30, self._poll_workers)
 
     @staticmethod
@@ -1512,22 +2254,30 @@ class DyslexiaCameraApp:
                 self._set_status(message, "success")
         elif event == "word":
             request_id, word_span = message
-            if request_id == self.speech_request_id:
+            if request_id == self.speech_request_id and self.speech_target == "description":
                 self._set_reading_word(word_span)
         elif event == "spoken":
             if message == self.speech_request_id:
                 self.active_sentence_span = None
                 self.active_word_span = None
                 self._render_description()
-                self._set_status(
-                    "Finished reading. Press Read aloud or Repeat to hear it again.",
-                    "success",
-                )
+                if self.speech_target == "scanner" and self.scanner_status is not None:
+                    self.scanner_status.configure(
+                        text="Finished reading scanned text.",
+                        fg=PALETTE["success"],
+                    )
+                else:
+                    self._set_status(
+                        "Finished reading. Press Read aloud or Repeat to hear it again.",
+                        "success",
+                    )
         elif event == "speech_error":
             self.active_sentence_span = None
             self.active_word_span = None
             self._render_description()
-            if not self.model_error:
+            if self.speech_target == "scanner" and self.scanner_status is not None:
+                self.scanner_status.configure(text=message, fg=PALETTE["warning"])
+            elif not self.model_error:
                 self._set_status(message, "warning")
         elif event == "voices_loaded":
             self.voice_lookup = message.get("lookup", {"Default": None})
@@ -1600,7 +2350,7 @@ class DyslexiaCameraApp:
                 cv2.LINE_AA,
             )
             self.photo_mode = True
-            self._show_frame(display_frame)
+            self._show_frame(display_frame, adjust_brightness=False)
             self.camera_status.configure(
                 text="Result image paused. Choose Return to live camera when ready.",
                 fg=PALETTE["success"],
@@ -1622,6 +2372,12 @@ class DyslexiaCameraApp:
 
         self.is_analyzing = True
         self.analysis_frame = self.last_frame.copy()
+        if self.brightness.get() != 100:
+            self.analysis_frame = cv2.convertScaleAbs(
+                self.analysis_frame,
+                alpha=self.brightness.get() / 100.0,
+                beta=0,
+            )
         self.identify_button.configure(state="disabled", text="Analyzing…")
         self.photo_button.configure(state="disabled")
         self.use_camera_button.configure(state="disabled")
@@ -1669,6 +2425,7 @@ class DyslexiaCameraApp:
         if not self.current_sentence:
             return
         self.speech_request_id += 1
+        self.speech_target = "description"
         first_word = re.search(r"\w+(?:['’]\w+)*", self.current_sentence)
         if first_word:
             self._set_reading_word((first_word.start(), first_word.end()))
@@ -1683,6 +2440,7 @@ class DyslexiaCameraApp:
 
     def close(self):
         self.closing = True
+        self._close_text_scanner()
         self.camera.stop()
         self.analysis.stop()
         self.speech.stop()

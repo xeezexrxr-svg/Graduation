@@ -29,8 +29,10 @@ A separate mobile website and Cloudflare Pages deployment are in `phone-web`. It
 ## What is included
 
 - Live camera preview and photo selection
+- Three-line app menu with a full-page text scanner and camera-image brightness control
+- Full-page English and Traditional Chinese OCR from the webcam or a chosen image; scanned text can be edited, selected, copied, and read aloud
 - Open-vocabulary object identification using names from `object_descriptions.json`
-- Prefers a recognized held object over a person or hand detection, and retries on a padded person crop when an item is not detected in the full image
+- Rechecks a detected hand/person crop to find small held objects, then favors an overlapping non-wearable object over clothing or glasses
 - Uses EasyOCR to read visible English and Traditional Chinese text in the detected object's crop; recognized text is added to the result and read aloud with the object explanation
 - Sends the detected object crop to Cloudflare Workers AI for a more specific, free-form description and label-based product identification
 - Object identification in a background worker, so model loading and analysis do not freeze the interface
@@ -57,8 +59,9 @@ Keep the file as valid JSON: use double quotes around names and text, and put a 
 
 ## Notes and limitations
 
-- The YOLO-World model can use the configured names as open-vocabulary detection prompts, but it will not identify every object reliably. Confidence is shown to help users judge results.
+- The YOLO-World model can use the configured names as open-vocabulary detection prompts, but it will not identify every object reliably. When a hand/person is detected, the app also analyzes a padded crop to look for small held objects. If object boxes overlap that person/hand, selection favors non-wearable objects over clothing and glasses; this heuristic cannot correct a wrong label or guarantee that the intended object is detected. Confidence is shown to help users judge results.
 - OCR can provide clues from labels or packaging, but it does not change YOLO's confidence and may misread text. If OCR cannot initialize, object detection continues without it.
+- The Text scanner uses EasyOCR locally for English and Traditional Chinese. Keep the page steady, in focus, and evenly lit; its confidence score is not a guarantee of accuracy, so proofread important text. Brightness changes the app's camera image and scan input, not the laptop display.
 - Read-aloud pronunciation depends on the selected Windows voice supporting the recognized language. Install/select a Traditional Chinese voice in Windows for Chinese speech.
 - This is a student prototype, not a safety device. Do not rely on it to identify medicine, hazards, or other safety-critical items.
 - YOLO detection and EasyOCR run locally. The detected object crop is sent to Cloudflare Workers AI for the optional detailed description and product identification; use the phone app or desktop app only with photos you are comfortable sending to the cloud. Pretrained model files may be downloaded by Ultralytics and EasyOCR the first time they run.
