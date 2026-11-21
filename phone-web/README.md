@@ -10,7 +10,8 @@ The mobile ClearView website, designed for readers with dyslexia. It shares its 
 - Finds every object in the photo on the phone itself, with ClearView's everyday-object detector (`public/models/clearview-detector.onnx`, a YOLOE model built from the project's `vocabulary.txt`) running in the browser through ONNX Runtime Web. The largest object that isn't a person is treated as the closest; the others are listed as "I can also see: …".
 - Sends only the closest object's crop to a Pages Function, which asks Cloudflare Workers AI's LLaVA model for a free-form description of it, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label. If that fails, the on-device name is shown instead.
 - Shows the generated item description, recognized label text, and any product identification based on that text, then reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
-- Reading preferences offer six background tints, text size, letter spacing, speech speed and voice; all are remembered on the device.
+- **Ruler view** on the Read a page screen: a reading ruler keeps your place one line (or 2–3 lines) at a time and fades the rest of the page. Move it by tapping a line, the Previous/Next line buttons, or the arrow keys. Read all starts from the ruler's line, and the ruler follows the voice while the sentence (highlighter yellow) and word (solid blue) are highlighted.
+- Reading preferences offer six background tints, text size, letter spacing, speech speed, voice, and the reading ruler (off or 1–3 lines; other lines clear, faded or almost hidden); all are remembered on the device.
 - Does not save photos. Only the closest object's crop is sent to Cloudflare for a description.
 
 The website needs HTTPS for camera access and clipboard access, so use the deployed Cloudflare Pages URL on your phone. The photo picker remains available when camera access is denied or unavailable.
@@ -50,7 +51,7 @@ This serves the static site and Pages Function locally. For local scans, start W
 
 - Browser camera and speech features vary by phone and browser.
 - Text recognition works best with a sharp, upright, evenly lit page; proofread OCR results. Selecting text works in the editable recognized-text area, and the browser reads the selected passage or all text. Text size and letter spacing apply to both the scanner text and object description; speech speed can be adjusted during playback, which resumes from the last word reported by the browser.
-- Mostly-Chinese text is read with a Chinese voice automatically when the phone has one and no voice was chosen; mixed text uses the default or chosen voice.
+- Read-aloud switches voice for each run of Chinese and English writing, even mid-sentence, because an English voice silently skips Chinese characters. Chinese is read with a 繁體中文 voice when the device has one; if it has none, a message explains how to add one. Some online voices (such as Google's) don't report individual words, so highlighting then moves by phrase rather than word.
 - Recognition is an AI estimate and can be wrong, especially for small, obscured, or unusual objects.
 - Cloudflare Workers AI usage may be subject to account limits or charges.
 - The on-device detector knows the 175 objects in `vocabulary.txt`; anything else can only be named by the cloud description of the closest object. See the main README to add objects.

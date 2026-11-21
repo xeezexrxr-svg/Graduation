@@ -38,6 +38,12 @@ const fontSizeInput = document.querySelector("#fontSize");
 const letterSpacingInput = document.querySelector("#letterSpacing");
 const speechRateInput = document.querySelector("#speechRate");
 const voiceChoice = document.querySelector("#voiceChoice");
+const rulerViewButton = document.querySelector("#rulerViewButton");
+const rulerControls = document.querySelector("#rulerControls");
+const rulerPrevButton = document.querySelector("#rulerPrevButton");
+const rulerNextButton = document.querySelector("#rulerNextButton");
+const rulerLinesInput = document.querySelector("#rulerLines");
+const rulerAwayInput = document.querySelector("#rulerAway");
 
 let cameraStream = null;
 let textCameraStream = null;
@@ -57,6 +63,10 @@ let textScanInProgress = false;
 let activeSpeechMode = null;
 let activeSpeechState = null;
 let speechRequestId = 0;
+let rulerView = false;
+let rulerLines = [];
+let rulerIndex = 0;
+let rulerParts = null;
 
 const descriptions = {
   apple: "It is a crisp fruit people can eat as a snack or add to a meal.",
@@ -109,8 +119,9 @@ function updateTextScanControls() {
   const isReadingText = activeSpeechMode === "text";
   copySelectedTextButton.disabled = !hasSelection;
   copyAllTextButton.disabled = !hasText;
-  readSelectedTextButton.disabled = !hasSelection || isReadingText || !("speechSynthesis" in window);
+  readSelectedTextButton.disabled = !hasSelection || isReadingText || rulerView || !("speechSynthesis" in window);
   readAllTextButton.disabled = !hasText || isReadingText || !("speechSynthesis" in window);
+  rulerViewButton.disabled = !hasText && !rulerView;
 }
 
 function closeFeatureMenu() {
@@ -422,7 +433,7 @@ function splitIntoWords(text) {
 }
 
 function sentenceRangeAt(text, index) {
-  const pattern = /[^.!?]+[.!?]*|[.!?]+/gu;
+  const pattern = /[^.!?。！？\n]+[.!?。！？]*|[.!?。！？]+/gu;
   for (const match of text.matchAll(pattern)) {
     if (match.index <= index && index < match.index + match[0].length) {
       return { start: match.index, end: match.index + match[0].length };
@@ -485,6 +496,7 @@ function renderTextReadingPreview(text) {
   }
   recognizedText.hidden = true;
   textReadingPreview.hidden = false;
+  attachRuler();
 }
 
 function updateTextReadingBoundary(charIndex) {
@@ -498,20 +510,137 @@ function updateTextReadingBoundary(charIndex) {
   activeTextPreviewWord = word;
   word.element.classList.add("reading-word");
   word.sentenceElement.classList.add("reading-sentence-active");
-  word.element.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (!followWithRuler(word)) {
+    word.element.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
 }
 
-function clearTextReadingPreview() {
+function clearTextHighlights() {
   if (activeTextPreviewWord) {
     activeTextPreviewWord.element.classList.remove("reading-word");
     activeTextPreviewWord.sentenceElement.classList.remove("reading-sentence-active");
   }
   activeTextPreviewWord = null;
+}
+
+function clearTextReadingPreview() {
+  clearTextHighlights();
   textPreviewWords = [];
+  rulerLines = [];
+  rulerParts = null;
+  rulerControls.hidden = true;
+  delete textReadingPreview.dataset.ruler;
   textReadingPreview.replaceChildren();
   textReadingPreview.style.height = "";
   textReadingPreview.hidden = true;
   recognizedText.hidden = false;
+}
+
+// Reading ruler: keeps the reader's place one line (or a few) at a time on a
+// scanned page. It follows read-aloud, and can be moved by tapping a line, the
+// Previous/Next line buttons, or the arrow keys.
+function rulerSize() {
+  return Number(rulerLinesInput.value) || 0;
+}
+
+function attachRuler() {
+  const part = (className) => {
+    const element = document.createElement("div");
+    element.className = className;
+    element.setAttribute("aria-hidden", "true");
+    return element;
+  };
+  rulerParts = { band: part("ruler-band"), above: part("ruler-mask"), below: part("ruler-mask") };
+  textReadingPreview.append(rulerParts.above, rulerParts.below, rulerParts.band);
+  textReadingPreview.dataset.away = rulerAwayInput.value;
+  rulerIndex = 0;
+  measureRulerLines();
+  drawRuler();
+}
+
+function measureRulerLines() {
+  rulerLines = [];
+  for (const word of textPreviewWords) {
+    const top = word.element.offsetTop;
+    const bottom = top + word.element.offsetHeight;
+    const line = rulerLines[rulerLines.length - 1];
+    if (line && Math.abs(line.top - top) < 6) {
+      line.bottom = Math.max(line.bottom, bottom);
+      line.words.push(word);
+    } else {
+      rulerLines.push({ top, bottom, words: [word] });
+    }
+  }
+}
+
+function drawRuler() {
+  const size = rulerSize();
+  const showing = Boolean(rulerParts) && size > 0 && rulerLines.length > 0 && !textReadingPreview.hidden;
+  if (showing) textReadingPreview.dataset.ruler = "";
+  else delete textReadingPreview.dataset.ruler;
+  rulerControls.hidden = !(showing && rulerView);
+  if (!showing) return;
+
+  rulerIndex = Math.max(0, Math.min(rulerIndex, rulerLines.length - 1));
+  const first = rulerLines[rulerIndex];
+  const last = rulerLines[Math.min(rulerLines.length - 1, rulerIndex + size - 1)];
+  const top = Math.max(0, first.top - 4);
+  const bottom = last.bottom + 4;
+  const { band, above, below } = rulerParts;
+  band.style.top = `${top}px`;
+  band.style.height = `${bottom - top}px`;
+  above.style.top = "0px";
+  above.style.height = `${top}px`;
+  below.style.height = "0px"; // measure the page without the old mask
+  below.style.top = `${bottom}px`;
+  below.style.height = `${Math.max(0, textReadingPreview.scrollHeight - bottom)}px`;
+  rulerPrevButton.disabled = rulerIndex === 0;
+  rulerNextButton.disabled = rulerIndex + size >= rulerLines.length;
+
+  const view = textReadingPreview;
+  if (top < view.scrollTop || bottom > view.scrollTop + view.clientHeight) {
+    view.scrollTo({
+      top: Math.max(0, top - view.clientHeight / 3),
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  }
+}
+
+function moveRuler(index) {
+  rulerIndex = index;
+  drawRuler();
+}
+
+// Moves the ruler to the spoken word's line. Returns false if the ruler is off.
+function followWithRuler(word) {
+  if (!rulerParts || rulerSize() === 0 || !rulerLines.length) return false;
+  const index = rulerLines.findIndex((line) => line.words.includes(word));
+  if (index >= 0 && (index < rulerIndex || index >= rulerIndex + rulerSize())) moveRuler(index);
+  return true;
+}
+
+function refreshRuler() {
+  if (textReadingPreview.hidden || !textPreviewWords.length) return;
+  measureRulerLines();
+  drawRuler();
+}
+
+function setRulerView(on) {
+  rulerView = on;
+  rulerViewButton.setAttribute("aria-pressed", String(on));
+  rulerViewButton.textContent = on ? "Edit text" : "Ruler view";
+  if (on) {
+    if (activeSpeechMode !== "text") renderTextReadingPreview(recognizedText.value);
+    drawRuler();
+    if (rulerSize() === 0) {
+      setTextScanStatus("The reading ruler is off. Turn it on in Reading preferences.", "info");
+    }
+  } else if (activeSpeechMode === "text") {
+    stopReading();
+  } else {
+    clearTextReadingPreview();
+  }
+  updateTextScanControls();
 }
 
 function renderDescription(label, explanation, recognizedText = "", product = "") {
@@ -595,14 +724,6 @@ function updateSpeechBoundary(charIndex) {
   word.element.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
-// Chinese text read with an English voice is unintelligible, so when the
-// reader hasn't picked a voice, mostly-Chinese text gets a Chinese one.
-function isMostlyChinese(text) {
-  const chinese = (text.match(/[㐀-鿿豈-﫿]/g) || []).length;
-  const latin = (text.match(/[a-z]/gi) || []).length;
-  return chinese > 0 && chinese * 3 >= latin;
-}
-
 function findChineseVoice() {
   return speechVoices.find((voice) => /^zh[-_](TW|Hant)/i.test(voice.lang))
     || speechVoices.find((voice) => /^zh[-_]HK/i.test(voice.lang))
@@ -668,79 +789,145 @@ function readAloud() {
   setStatus("Reading the explanation aloud…", "success");
 }
 
+// Splits text (from `from` on) into runs of Chinese and non-Chinese writing, so
+// each run can be read by a voice that speaks its language: an English voice
+// silently skips Chinese characters, even mid-sentence ("The label reads: 烏龍茶").
+// Pieces with no Latin letters (digits, punctuation, spaces) stay with the run
+// before them, so "500 毫升" or "。" don't get a voice of their own.
+const CHINESE_RUN = /[\p{Script=Han}　-〿＀-￯]+/gu;
+
+function splitByLanguage(text, from = 0) {
+  const pieces = [];
+  let cursor = from;
+  for (const match of text.slice(from).matchAll(CHINESE_RUN)) {
+    const start = from + match.index;
+    if (start > cursor) pieces.push({ start: cursor, end: start, chinese: false });
+    pieces.push({ start, end: start + match[0].length, chinese: true });
+    cursor = start + match[0].length;
+  }
+  if (cursor < text.length) pieces.push({ start: cursor, end: text.length, chinese: false });
+
+  const runs = [];
+  for (const piece of pieces) {
+    const run = runs[runs.length - 1];
+    const hasLatin = /[a-z]/i.test(text.slice(piece.start, piece.end));
+    if (run && (run.chinese === piece.chinese || (!piece.chinese && !hasLatin))) {
+      run.end = piece.end;
+    } else {
+      runs.push({ ...piece });
+    }
+  }
+  return runs;
+}
+
+// The reader's chosen voice is used unless it can't speak the run's language.
+function voiceForRun(run, chosenVoice) {
+  const chosenSpeaksChinese = /^zh/i.test(chosenVoice?.lang || "");
+  if (run.chinese && !chosenSpeaksChinese) return findChineseVoice();
+  return chosenVoice;
+}
+
+function reportSpeechBoundary(state, charIndex, charLength) {
+  state.offset = Math.min(state.text.length, charIndex);
+  if (state.mode === "description") {
+    updateSpeechBoundary(charIndex);
+    return;
+  }
+  const boundaryLength = Number.isFinite(charLength) && charLength > 0
+    ? charLength
+    : splitIntoWords(state.text).find((word) => word.start <= charIndex && charIndex < word.end)?.end - charIndex || 1;
+  recognizedText.setSelectionRange(
+    state.sourceStart + charIndex,
+    Math.min(state.sourceStart + state.text.length, state.sourceStart + charIndex + boundaryLength),
+  );
+  updateTextReadingBoundary(state.sourceStart + charIndex);
+}
+
+function endTextReading() {
+  stopTextButton.disabled = true;
+  if (rulerView) clearTextHighlights();
+  else clearTextReadingPreview();
+  updateTextScanControls();
+}
+
+function finishSpeech(state) {
+  activeSpeechMode = null;
+  activeSpeechState = null;
+  if (state.mode === "description") {
+    if (activeWord) {
+      activeWord.element.classList.remove("reading-word");
+      activeWord.sentenceElement.classList.remove("reading-sentence-active");
+      activeWord = null;
+    }
+    readButton.disabled = false;
+    stopButton.disabled = true;
+    setStatus("Finished reading. You can listen again at any time.", "success");
+  } else {
+    endTextReading();
+    setTextScanStatus("Finished reading the selected text.", "success");
+  }
+}
+
+function failSpeech(state) {
+  activeSpeechMode = null;
+  activeSpeechState = null;
+  if (state.mode === "description") {
+    readButton.disabled = false;
+    stopButton.disabled = true;
+    setStatus("The browser could not read this explanation aloud.", "error");
+  } else {
+    endTextReading();
+    setTextScanStatus("The browser could not read this text aloud.", "error");
+  }
+}
+
 function startSpeechUtterance(state, offset, requestId) {
-  const text = state.text.slice(offset);
-  if (!text) return;
+  if (!state.text.slice(offset).trim()) return;
   state.offset = offset;
   activeSpeechState = state;
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = Number(speechRateInput.value);
-  if (state.voice) {
-    utterance.voice = state.voice;
-  } else if (isMostlyChinese(text)) {
-    utterance.lang = "zh-TW";
-    const voice = findChineseVoice();
-    if (voice) utterance.voice = voice;
-  }
-  utterance.onboundary = (event) => {
-    if (requestId !== speechRequestId || activeSpeechMode !== state.mode) return;
-    const charIndex = offset + Math.max(0, event.charIndex || 0);
-    state.offset = Math.min(state.text.length, charIndex);
-    if (state.mode === "description") {
-      updateSpeechBoundary(charIndex);
-      return;
-    }
+  const isCurrent = () => requestId === speechRequestId && activeSpeechMode === state.mode;
+  const runs = splitByLanguage(state.text, offset);
+  let chineseWithoutVoice = false;
 
-    const boundaryLength = Number.isFinite(event.charLength) && event.charLength > 0
-      ? event.charLength
-      : splitIntoWords(state.text).find((word) => word.start <= charIndex && charIndex < word.end)?.end - charIndex || 1;
-    recognizedText.setSelectionRange(
-      state.sourceStart + charIndex,
-      Math.min(state.sourceStart + state.text.length, state.sourceStart + charIndex + boundaryLength),
-    );
-    updateTextReadingBoundary(state.sourceStart + charIndex);
-  };
-  utterance.onend = () => {
-    if (requestId !== speechRequestId || activeSpeechMode !== state.mode) return;
-    activeSpeechMode = null;
-    activeSpeechState = null;
-    if (state.mode === "description") {
-      if (activeWord) {
-        activeWord.element.classList.remove("reading-word");
-        activeWord.sentenceElement.classList.remove("reading-sentence-active");
-        activeWord = null;
+  // One utterance per language run; the browser plays them in order.
+  runs.forEach((run, index) => {
+    const utterance = new SpeechSynthesisUtterance(state.text.slice(run.start, run.end));
+    utterance.rate = Number(speechRateInput.value);
+    const voice = voiceForRun(run, state.voice);
+    if (voice) utterance.voice = voice;
+    if (run.chinese) {
+      utterance.lang = voice?.lang || "zh-TW";
+      if (!/^zh/i.test(voice?.lang || "")) chineseWithoutVoice = true;
+    }
+    // Some voices (such as Google's online ones) never report word boundaries,
+    // so highlighting also moves at the start of every run.
+    utterance.onstart = () => {
+      if (isCurrent()) reportSpeechBoundary(state, run.start);
+    };
+    utterance.onboundary = (event) => {
+      if (isCurrent()) {
+        reportSpeechBoundary(state, run.start + Math.max(0, event.charIndex || 0), event.charLength);
       }
-      readButton.disabled = false;
-      stopButton.disabled = true;
-      setStatus("Finished reading. You can listen again at any time.", "success");
-    } else {
-      stopTextButton.disabled = true;
-      clearTextReadingPreview();
-      updateTextScanControls();
-      setTextScanStatus("Finished reading the selected text.", "success");
+    };
+    if (index === runs.length - 1) {
+      utterance.onend = () => {
+        if (isCurrent()) finishSpeech(state);
+      };
     }
-  };
-  utterance.onerror = (event) => {
-    if (requestId !== speechRequestId || activeSpeechMode !== state.mode) return;
-    activeSpeechMode = null;
-    activeSpeechState = null;
-    if (state.mode === "description") {
-      readButton.disabled = false;
-      stopButton.disabled = true;
-    } else {
-      stopTextButton.disabled = true;
-      clearTextReadingPreview();
-      updateTextScanControls();
-    }
-    if (event.error !== "canceled" && event.error !== "interrupted") {
-      const message = state.mode === "description"
-        ? "The browser could not read this explanation aloud."
-        : "The browser could not read this text aloud.";
-      if (state.mode === "description") setStatus(message, "error");
-      else setTextScanStatus(message, "error");
-    }
-  };
-  window.speechSynthesis.speak(utterance);
+    utterance.onerror = (event) => {
+      if (!isCurrent() || event.error === "canceled" || event.error === "interrupted") return;
+      window.speechSynthesis.cancel();
+      failSpeech(state);
+    };
+    window.speechSynthesis.speak(utterance);
+  });
+
+  if (chineseWithoutVoice) {
+    const message = "This device has no Chinese voice, so Chinese text may be skipped. "
+      + "Add a Chinese (Taiwan) voice in your device's text-to-speech settings.";
+    if (state.mode === "text") setTextScanStatus(message, "warning");
+    else setStatus(message, "warning");
+  }
 }
 
 function updateReadingSpeechRate() {
@@ -772,9 +959,7 @@ function stopReading() {
     activeWord = null;
   }
   if (stoppedMode === "text") {
-    stopTextButton.disabled = true;
-    clearTextReadingPreview();
-    updateTextScanControls();
+    endTextReading();
     setTextScanStatus("Reading stopped.", "info");
   } else if (stoppedMode === "description") {
     readButton.disabled = false;
@@ -850,6 +1035,7 @@ async function scanTextImage() {
   updateTextScanControls();
   try {
     stopReading();
+    if (rulerView) setRulerView(false);
     setTextScanStatus("Loading English and Traditional Chinese text models…");
     const worker = await getTextOcrWorker();
     setTextScanStatus("Enhancing the image and recognizing text…");
@@ -909,7 +1095,9 @@ function readScannerText(selectedOnly) {
     setTextScanStatus("Text-to-speech is not available in this browser.", "error");
     return;
   }
-  const selectionStart = selectedOnly ? recognizedText.selectionStart : 0;
+  // In ruler view, "Read all" starts at the ruler's line.
+  const rulerStart = rulerView && rulerLines.length ? rulerLines[rulerIndex].words[0].start : 0;
+  const selectionStart = selectedOnly ? recognizedText.selectionStart : rulerStart;
   const selectionEnd = selectedOnly ? recognizedText.selectionEnd : recognizedText.value.length;
   const source = recognizedText.value.slice(selectionStart, selectionEnd);
   const text = source.trim();
@@ -936,7 +1124,7 @@ function readScannerText(selectedOnly) {
     offset: 0,
     voice: selectedVoice,
   };
-  renderTextReadingPreview(recognizedText.value);
+  if (!rulerView) renderTextReadingPreview(recognizedText.value);
   startSpeechUtterance(speechState, 0, requestId);
   updateTextScanControls();
   readSelectedTextButton.disabled = true;
@@ -1138,6 +1326,8 @@ for (const [name, input] of [
   ["fontSize", fontSizeInput],
   ["letterSpacing", letterSpacingInput],
   ["speechRate", speechRateInput],
+  ["rulerLines", rulerLinesInput],
+  ["rulerAway", rulerAwayInput],
 ]) {
   const saved = loadSetting(name);
   if (saved !== null) input.value = saved;
@@ -1150,6 +1340,31 @@ voiceChoice.addEventListener("change", () => {
 fontSizeInput.addEventListener("input", updateFontSizePreference);
 letterSpacingInput.addEventListener("input", updateLetterSpacingPreference);
 speechRateInput.addEventListener("input", updateReadingSpeechRate);
+fontSizeInput.addEventListener("input", refreshRuler);
+letterSpacingInput.addEventListener("input", refreshRuler);
+window.addEventListener("resize", refreshRuler);
+
+rulerViewButton.addEventListener("click", () => setRulerView(!rulerView));
+rulerPrevButton.addEventListener("click", () => moveRuler(rulerIndex - 1));
+rulerNextButton.addEventListener("click", () => moveRuler(rulerIndex + 1));
+rulerLinesInput.addEventListener("change", drawRuler);
+rulerAwayInput.addEventListener("change", () => {
+  textReadingPreview.dataset.away = rulerAwayInput.value;
+});
+textReadingPreview.addEventListener("click", (event) => {
+  if (!rulerParts || rulerSize() === 0) return;
+  const box = textReadingPreview.getBoundingClientRect();
+  const y = event.clientY - box.top - textReadingPreview.clientTop + textReadingPreview.scrollTop;
+  const index = rulerLines.findIndex((line) => y >= line.top - 8 && y <= line.bottom + 8);
+  if (index >= 0) moveRuler(index);
+});
+textReadingPreview.addEventListener("keydown", (event) => {
+  if (!rulerParts || rulerSize() === 0) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowRight") moveRuler(rulerIndex + 1);
+  else if (event.key === "ArrowUp" || event.key === "ArrowLeft") moveRuler(rulerIndex - 1);
+  else return;
+  event.preventDefault();
+});
 
 if ("speechSynthesis" in window) {
   refreshVoices();

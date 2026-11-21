@@ -144,6 +144,9 @@
             <button class="button button-secondary" id="stopTextButton" type="button" disabled>
               Stop reading
             </button>
+            <button class="button button-secondary" id="rulerViewButton" type="button" disabled aria-pressed="false">
+              Ruler view
+            </button>
           </div>
           <label class="recognized-text-label" for="recognizedText">
             Recognized text <span>Select or edit the words you want to hear</span>
@@ -162,9 +165,14 @@
             id="textReadingPreview"
             class="recognized-text text-reading-preview"
             role="region"
-            aria-label="Text being read aloud"
+            aria-label="Text being read. Tap a line or use the arrow keys to move the reading ruler."
+            tabindex="0"
             hidden
           ></div>
+          <div class="ruler-controls" id="rulerControls" hidden>
+            <button class="button button-secondary" id="rulerPrevButton" type="button">Previous line</button>
+            <button class="button button-secondary" id="rulerNextButton" type="button">Next line</button>
+          </div>
           <p class="status-message" id="textScanStatus" role="status" aria-live="polite">
             Start the camera or choose a photo to scan text.
           </p>
@@ -219,6 +227,23 @@
             <span>Voice</span>
             <select id="voiceChoice" aria-label="Speech voice">
               <option value="">Default voice</option>
+            </select>
+          </label>
+          <label>
+            <span>Reading ruler</span>
+            <select id="rulerLines">
+              <option value="0">Off</option>
+              <option value="1" selected>1 line</option>
+              <option value="2">2 lines</option>
+              <option value="3">3 lines</option>
+            </select>
+          </label>
+          <label>
+            <span>Lines outside the ruler</span>
+            <select id="rulerAway">
+              <option value="clear">Keep clear</option>
+              <option value="fade" selected>Fade</option>
+              <option value="hide">Almost hide</option>
             </select>
           </label>
         </div>
