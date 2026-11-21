@@ -515,7 +515,8 @@ function clearTextReadingPreview() {
 }
 
 function renderDescription(label, explanation, recognizedText = "", product = "") {
-  currentDescription = `This is ${label}. ${explanation}`;
+  const article = /^[aeiou]/i.test(label) ? "an" : "a";
+  currentDescription = `This is ${article} ${label}. ${explanation}`;
   if (product) {
     currentDescription += ` The label suggests this is ${product}.`;
   }
@@ -920,16 +921,26 @@ async function scanImage() {
     const closest = detected.closest;
     const uploadImage = closest ? await cropDetection(selectedImage, closest) : selectedImage;
     setStatus("Describing the closest object…");
-    const response = await fetch("/api/identify", {
-      method: "POST",
-      headers: { "Content-Type": uploadImage.type || "image/jpeg" },
-      body: uploadImage,
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(payload?.error || "Could not identify that photo. Please try again.");
+    let payload = null;
+    let describedOnline = true;
+    try {
+      const response = await fetch("/api/identify", {
+        method: "POST",
+        headers: { "Content-Type": uploadImage.type || "image/jpeg" },
+        body: uploadImage,
+      });
+      payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not identify that photo. Please try again.");
+      }
+    } catch (error) {
+      if (!closest) throw error;
+      console.error("Online description failed; using the on-device name", error);
+      payload = null;
+      describedOnline = false;
     }
-    if (closest && payload && !payload.label && !payload.recognizedText) {
+    payload = payload || {};
+    if (closest && !payload.label && !payload.recognizedText) {
       payload.found = true;
       payload.label = closest.label;
     }
@@ -965,6 +976,14 @@ async function scanImage() {
       ? payload.product.trim().slice(0, 120)
       : "";
     renderDescription(label, explanation, recognizedText, product);
+    resultContent.parentElement.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "nearest",
+    });
+    if (!describedOnline) {
+      setStatus("Named on your phone. The detailed description needs an internet connection, so try again later.", "warning");
+      return;
+    }
     setStatus(
       recognizedText
         ? "Label text read. Check the text and product identification; AI can make mistakes."
@@ -1052,6 +1071,24 @@ function updateLetterSpacingPreference() {
   recognizedText.style.letterSpacing = `${spacing}em`;
   textReadingPreview.style.letterSpacing = `${spacing}em`;
 }
+const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+function applyTint(tint) {
+  document.documentElement.dataset.tint = tint;
+  themeColorMeta.content = getComputedStyle(document.documentElement).getPropertyValue("--ground").trim();
+}
+for (const option of document.querySelectorAll('input[name="tint"]')) {
+  option.checked = option.value === document.documentElement.dataset.tint;
+  option.addEventListener("change", () => {
+    applyTint(option.value);
+    try {
+      localStorage.setItem("clearview-tint", option.value);
+    } catch {
+      // Storage can be blocked (private mode); the tint still applies for this visit.
+    }
+  });
+}
+applyTint(document.documentElement.dataset.tint || "cream");
+
 fontSizeInput.addEventListener("input", updateFontSizePreference);
 letterSpacingInput.addEventListener("input", updateLetterSpacingPreference);
 speechRateInput.addEventListener("input", updateReadingSpeechRate);

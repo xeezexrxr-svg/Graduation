@@ -3,9 +3,20 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#0e1322">
+    <meta name="theme-color" content="#faf6ec">
+    <script>
+      try {
+        document.documentElement.dataset.tint = localStorage.getItem("clearview-tint")
+          || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "cream");
+      } catch {
+        document.documentElement.dataset.tint = "cream";
+      }
+    </script>
     <meta name="description" content="Use your phone camera to identify objects or scan English and Traditional Chinese text and read selected words aloud.">
-    <title>ClearView — Object Reader</title>
+    <title>ClearView</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;800&display=swap">
     <link rel="stylesheet" href="/styles.css">
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js" defer></script>
@@ -33,109 +44,90 @@
               Object reader
             </button>
             <button type="button" data-screen-target="textScannerScreen">
-              Text scanner
+              Read a page
             </button>
           </nav>
         </div>
         <a class="brand" href="/" aria-label="ClearView home" data-screen-target="objectReaderScreen">
-          <span class="brand-mark" aria-hidden="true">C</span>
+          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+            <circle cx="14" cy="14" r="11"></circle>
+            <circle cx="14" cy="14" r="4.5"></circle>
+          </svg>
           <span>ClearView</span>
         </a>
       </div>
-      <span class="header-note">EVERYDAY OBJECT READER</span>
     </header>
 
     <main>
       <div id="objectReaderScreen" class="app-screen">
       <section class="intro" aria-labelledby="page-title">
-        <p class="eyebrow">READING SUPPORT</p>
-        <h1 id="page-title">What are you looking at?</h1>
-        <p>Scan an everyday item to get a simple explanation. You can take a photo or choose one from your phone.</p>
+        <h1 id="page-title">What’s in front of you?</h1>
+        <p>Photograph an item to hear what it is and what its label says.</p>
       </section>
 
       <div class="workspace">
-        <section class="card scanner-card" aria-labelledby="scanner-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">CAMERA</p>
-              <h2 id="scanner-title">Scan an object</h2>
-            </div>
-            <span class="camera-badge" aria-hidden="true">LIVE</span>
-          </div>
+        <section class="scanner" aria-labelledby="scanner-title">
+          <h2 class="visually-hidden" id="scanner-title">Scan an object</h2>
 
           <div class="camera-view" id="cameraView">
             <video id="cameraVideo" autoplay playsinline muted hidden></video>
             <img id="photoPreview" alt="Photo selected for object identification" hidden>
             <div class="camera-placeholder" id="cameraPlaceholder">
-              <span class="camera-icon" aria-hidden="true">◎</span>
-              <p>Start your camera or choose a photo</p>
-              <span class="camera-hint">Place one item in view for the clearest result</span>
+              <p>Start the camera or choose a photo</p>
+              <span class="camera-hint">Hold the item you want named closest to the lens</span>
             </div>
           </div>
 
           <div class="camera-actions">
             <button class="button button-secondary" id="cameraButton" type="button">Start camera</button>
-            <button class="button button-secondary" id="photoButton" type="button">Gallery / files</button>
+            <button class="button button-secondary" id="photoButton" type="button">Choose photo</button>
             <input id="photoInput" type="file" accept="image/*" hidden>
             <button class="button button-primary" id="scanButton" type="button" disabled>Identify object</button>
           </div>
           <p class="status-message" id="scanStatus" role="status" aria-live="polite">Allow camera access, or choose a photo to begin.</p>
         </section>
 
-        <section class="card explanation-card" aria-labelledby="result-title">
-          <div class="section-heading result-heading">
-            <div>
-              <p class="eyebrow">YOUR RESULT</p>
-              <h2 id="result-title">Object explanation</h2>
-            </div>
-            <span class="result-icon" aria-hidden="true">✦</span>
-          </div>
+        <section class="result-slab" aria-labelledby="result-title">
+          <h2 class="visually-hidden" id="result-title">Result</h2>
 
           <div class="result-content" id="resultContent">
-            <p class="empty-result">Your object and its explanation will appear here after a scan.</p>
+            <p class="empty-result">Scan something and its name and description appear here, ready to read aloud.</p>
           </div>
           <div class="reading-actions">
             <button class="button button-primary" id="readButton" type="button" disabled>Read aloud</button>
             <button class="button button-secondary" id="stopButton" type="button" disabled>Stop</button>
           </div>
-          <p class="privacy-note">Photos are sent to Cloudflare Workers AI to identify the object. This app does not save them.</p>
         </section>
+        <p class="privacy-note">Objects are found on your phone. Only the closest one is sent to Cloudflare Workers AI for a description, and it isn’t saved.</p>
       </div>
       </div>
 
       <section id="textScannerScreen" class="app-screen" aria-labelledby="text-scanner-title" hidden>
         <section class="intro">
-          <p class="eyebrow">ON-DEVICE OCR</p>
-          <h1 id="text-scanner-title">Text scanner</h1>
-          <p>Take a page photo or choose an image to recognize English and Traditional Chinese text, then select, copy, or listen to any passage.</p>
+          <h1 id="text-scanner-title">Read a page</h1>
+          <p>Photograph printed English or 繁體中文 text, then listen to it, copy it, or pick out just the part you need.</p>
         </section>
 
-        <section class="card text-scanner-card" aria-label="Scan and read text">
-          <div class="section-heading">
-            <h2>Scan and read text</h2>
-            <span class="camera-badge">EN · 繁體中文</span>
-          </div>
-          <p class="text-scanner-help">
-            Recognition runs on this device. The English and Traditional Chinese
-            models download the first time and are cached by your browser.
-          </p>
+        <section class="text-scanner" aria-label="Scan and read text">
           <div class="camera-view text-camera-view" id="textCameraView">
             <video id="textCameraVideo" autoplay playsinline muted hidden></video>
             <img id="textPhotoPreview" alt="Photo selected for text scanning" hidden>
             <div class="camera-placeholder" id="textCameraPlaceholder">
-              <span class="camera-icon" aria-hidden="true">◎</span>
               <p>Start the camera or choose a page photo</p>
               <span class="camera-hint">Keep the text in focus and avoid glare</span>
             </div>
           </div>
           <div class="text-camera-actions">
             <button class="button button-secondary" id="textCameraButton" type="button">Start camera</button>
-            <button class="button button-secondary" id="textPhotoButton" type="button">Gallery / files</button>
+            <button class="button button-secondary" id="textPhotoButton" type="button">Choose photo</button>
             <input id="textPhotoInput" type="file" accept="image/*" hidden>
             <button class="button button-primary" id="scanTextButton" type="button" disabled>
               Scan text
             </button>
           </div>
+          <p class="text-scanner-help">
+            Text is read on your phone. The language files download on first use, then stay saved in your browser.
+          </p>
           <div class="text-scan-actions">
             <button class="button button-secondary" id="copySelectedTextButton" type="button" disabled>
               Copy selected
@@ -179,16 +171,45 @@
         </section>
       </section>
 
-      <details class="card preferences-card">
+      <details class="preferences-card">
         <summary>Reading preferences</summary>
         <div class="preferences-grid">
+          <fieldset class="tint-picker">
+            <legend>Background colour</legend>
+            <div class="tint-options">
+              <label class="tint-option">
+                <input type="radio" name="tint" value="cream">
+                <span style="--swatch: #faf6ec;">Cream</span>
+              </label>
+              <label class="tint-option">
+                <input type="radio" name="tint" value="yellow">
+                <span style="--swatch: #fcf5c7;">Yellow</span>
+              </label>
+              <label class="tint-option">
+                <input type="radio" name="tint" value="blue">
+                <span style="--swatch: #e3eef8;">Blue</span>
+              </label>
+              <label class="tint-option">
+                <input type="radio" name="tint" value="green">
+                <span style="--swatch: #e6f2e4;">Mint</span>
+              </label>
+              <label class="tint-option">
+                <input type="radio" name="tint" value="peach">
+                <span style="--swatch: #fcebdd;">Peach</span>
+              </label>
+              <label class="tint-option">
+                <input type="radio" name="tint" value="dark">
+                <span style="--swatch: #1e2227; --swatch-ink: #e8e4d9;">Dark</span>
+              </label>
+            </div>
+          </fieldset>
           <label>
             <span>Text size <output id="fontSizeValue">22px</output></span>
             <input id="fontSize" type="range" min="18" max="36" value="22">
           </label>
           <label>
-            <span>Letter spacing <output id="letterSpacingValue">0</output></span>
-            <input id="letterSpacing" type="range" min="0" max="4" value="0">
+            <span>Letter spacing <output id="letterSpacingValue">2</output></span>
+            <input id="letterSpacing" type="range" min="0" max="4" value="2">
           </label>
           <label>
             <span>Speech speed <output id="speechRateValue">1×</output></span>
