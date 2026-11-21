@@ -115,3 +115,21 @@ test("objects found by only one model are all kept", () => {
   );
   assert.deepEqual(names(merged).sort(), ["cup", "keys"]);
 });
+
+test("things worn by a person can't be the closest object (skier's hat vs skis)", () => {
+  const { closest, objects } = summarizeDetections([
+    { label: "person", confidence: 0.9, box: [100, 0, 300, 400] },
+    { label: "hat", confidence: 0.8, box: [150, 0, 260, 90] },
+    { label: "skis", confidence: 0.6, box: [80, 380, 330, 420] },
+  ]);
+  assert.equal(closest.label, "skis");
+  assert.deepEqual([...objects].sort(), ["hat", "skis"]);
+});
+
+test("a worn item is still chosen if it's the only object", () => {
+  const { closest } = summarizeDetections([
+    { label: "person", confidence: 0.9, box: [100, 0, 300, 400] },
+    { label: "glasses", confidence: 0.7, box: [160, 40, 240, 70] },
+  ]);
+  assert.equal(closest.label, "glasses");
+});

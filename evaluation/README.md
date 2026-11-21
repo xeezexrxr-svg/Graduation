@@ -47,6 +47,21 @@ alone) and get a comparison table: a good section for a report, because it shows
 combine them. It does not score the cloud
 description sentence; judge a sample of those by hand if you want to report on them.
 
+## 1b. Benchmark on all 80 YOLO26 object types (COCO)
+
+```powershell
+.venv\Scripts\python.exe evaluation\coco_benchmark.py
+```
+
+Downloads COCO *validation* photos (never used to train the models), chosen so all 80 object
+types appear at least 10 times, and scores the three set-ups per object type. Results:
+[coco-results.md](coco-results.md). Read them with two limits in mind:
+
+- COCO only labels its 80 types, so when the everyday model correctly names something else
+  (a plate, a mirror, a game controller in someone's hand) it is scored as wrong.
+- COCO photos are wide scenes; the apps are used close up on one object, where
+  "largest = closest" is much less ambiguous. Your own photos (section 1) test that.
+
 ## 2. Testing with dyslexic readers
 
 See [user-testing.md](user-testing.md) for a ready-to-use session plan and questionnaire.

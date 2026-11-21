@@ -6,7 +6,9 @@
 // - YOLO26: knows only 80 object types, but is more reliable on those.
 // When both find the same object, YOLO26's name wins if the everyday model also
 // thought it was one of YOLO26's types (that fixes a mouse seen from above being
-// called a cell phone). Objects only the everyday model knows keep its name.
+// called a cell phone). Objects only the everyday model knows keep its name, and
+// its lone guesses of YOLO26's own types (where YOLO26 saw nothing) are dropped:
+// on the COCO benchmark those were mostly wrong (evaluation/coco-results.md).
 // The desktop app combines them the same way (app.py, merge_with_coco).
 const ORT_VERSION = "1.20.1";
 const EVERYDAY_MODEL = { model: "/models/clearview-detector.onnx", labels: "/models/labels.json", minScore: 0.4 };
@@ -15,6 +17,12 @@ const DETECTOR_INPUT_SIZE = 640;
 const DETECTOR_IOU_LIMIT = 0.45;
 const SAME_OBJECT_IOU = 0.45;
 const DETECTOR_HUMAN_LABELS = new Set(["person"]);
+// Clothes and accessories on a person aren't what the user is pointing at, so they
+// can't be the closest object (a skier's hat beat the skis in testing).
+const WORN_ITEMS = new Set([
+  "glasses", "sunglasses", "hat", "cap", "headphones", "earphones", "shirt", "jacket",
+  "shoes", "shoe", "sock", "belt", "watch", "ring", "necklace", "face mask",
+]);
 // YOLO26's names, written the way vocabulary.txt writes them.
 const COCO_TO_EVERYDAY = new Map([
   ["mouse", "computer mouse"],
@@ -136,17 +144,28 @@ function mergeDetections(everyday, coco, cocoLabels) {
       merged.push({ label, confidence: detection.confidence, box: detection.box, source: "coco" });
     }
   }
-  return merged;
+  return merged.filter((detection) => detection.source === "coco" || !cocoNames.has(detection.label));
 }
 
 // Returns { closest, objects }: the largest non-person box (best guess for the
 // closest object) and every distinct object label, biggest first.
+function isWornByPerson(item, people) {
+  const area = boxArea(item.box);
+  return WORN_ITEMS.has(item.label) && people.some((person) => {
+    const width = Math.max(0, Math.min(item.box[2], person.box[2]) - Math.max(item.box[0], person.box[0]));
+    const height = Math.max(0, Math.min(item.box[3], person.box[3]) - Math.max(item.box[1], person.box[1]));
+    return area > 0 && (width * height) / area >= 0.5;
+  });
+}
+
 function summarizeDetections(detections) {
+  const people = detections.filter((detection) => DETECTOR_HUMAN_LABELS.has(detection.label));
   const things = detections
     .filter((detection) => !DETECTOR_HUMAN_LABELS.has(detection.label))
     .sort((first, second) => boxArea(second.box) - boxArea(first.box));
+  const candidates = things.filter((thing) => !isWornByPerson(thing, people));
   return {
-    closest: things[0] || null,
+    closest: candidates[0] || things[0] || null,
     objects: [...new Set(things.map((detection) => detection.label))],
   };
 }

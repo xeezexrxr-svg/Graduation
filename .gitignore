@@ -16,3 +16,6 @@ node_modules/
 yoloe-26n-seg.pt
 mobileclip*.ts
 /*.onnx
+
+# COCO benchmark downloads (evaluation/coco_benchmark.py)
+evaluation/coco-cache/

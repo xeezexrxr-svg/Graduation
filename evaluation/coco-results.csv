@@ -1,0 +1,81 @@
+object,in_vocabulary,real,combined_hits,combined_detections,everyday_hits,everyday_detections,yolo26_hits,yolo26_detections
+airplane,False,11,8,8,0,0,8,9
+apple,True,14,1,4,2,8,1,4
+backpack,True,18,1,2,1,1,1,2
+ball,True,36,10,11,1,3,11,14
+banana,True,15,2,4,2,9,2,4
+baseball bat,False,14,5,6,0,0,5,7
+baseball glove,False,10,3,3,0,0,3,3
+bear,False,10,7,7,0,0,7,7
+bed,True,11,5,9,6,10,7,9
+bench,False,33,2,4,0,0,2,4
+bicycle,True,18,8,9,6,7,9,12
+bird,True,20,16,17,2,2,16,18
+boat,False,12,3,3,0,0,3,3
+book,True,55,7,8,3,4,7,8
+bottle,True,61,22,31,19,36,23,32
+bowl,True,46,14,21,17,24,24,35
+broccoli,True,11,6,6,5,7,7,8
+bus,True,11,8,8,10,19,8,8
+cake,True,26,3,6,2,6,4,8
+car,True,83,44,56,26,27,45,59
+carrot,True,16,1,8,0,3,2,10
+cat,True,10,7,15,7,11,7,15
+cell phone,True,27,2,3,4,9,2,4
+chair,True,125,35,54,31,43,36,58
+clock,True,17,7,10,5,14,8,10
+computer mouse,True,11,5,5,4,4,7,7
+cow,False,21,10,10,0,0,10,10
+cup,True,56,20,30,20,33,21,33
+dog,True,13,7,7,8,16,8,9
+doughnut,True,32,5,5,0,0,5,5
+elephant,False,14,9,12,0,0,9,17
+fire hydrant,False,10,4,6,0,0,4,6
+fork,True,12,4,5,3,3,5,8
+frisbee,False,10,7,8,0,0,7,8
+giraffe,False,11,10,10,0,0,10,10
+hair dryer,False,10,0,0,0,0,0,0
+handbag,True,25,1,1,4,12,1,1
+horse,False,12,6,8,0,0,6,8
+hot dog,True,10,4,4,1,3,4,5
+keyboard,True,14,8,12,8,11,8,12
+kite,False,12,11,11,0,0,11,11
+knife,True,26,4,4,2,6,5,5
+laptop,True,14,10,12,8,10,10,12
+microwave,True,15,11,12,9,13,11,13
+motorcycle,True,10,5,6,5,7,5,6
+orange,True,24,6,12,5,25,6,12
+oven,True,20,11,12,5,14,11,12
+parking meter,False,11,2,2,0,0,2,3
+person,True,609,366,418,359,473,372,429
+pizza,True,20,6,6,5,6,6,6
+potted plant,True,25,6,12,4,5,6,12
+refrigerator,True,16,11,13,10,13,11,13
+remote control,True,11,2,4,0,0,4,8
+sandwich,True,11,2,2,1,1,8,10
+scissors,True,11,2,2,1,2,2,3
+sheep,False,10,5,6,0,0,5,6
+sink,True,26,13,16,13,15,13,16
+skateboard,False,10,10,11,0,0,10,11
+skis,False,20,3,3,0,0,3,3
+snowboard,False,11,3,5,0,0,3,5
+sofa,True,19,4,5,3,5,4,7
+spoon,True,30,4,5,3,6,4,6
+stop sign,False,10,7,7,0,0,7,7
+suitcase,False,13,2,3,0,0,3,4
+surfboard,False,14,0,0,0,0,0,0
+table,True,48,12,18,3,6,22,30
+teddy bear,True,13,8,9,8,12,10,11
+tennis racket,False,11,8,9,0,0,8,9
+tie,False,10,3,3,0,0,3,3
+toaster,True,9,2,2,5,6,2,2
+toilet,True,16,9,11,4,5,9,11
+toothbrush,True,14,0,1,0,0,0,1
+traffic light,False,26,8,10,0,0,8,12
+train,False,10,8,11,0,0,8,12
+truck,False,22,6,10,0,0,8,12
+tv,True,30,19,21,21,24,19,22
+umbrella,True,14,4,5,4,4,4,6
+vase,True,41,8,11,8,12,10,15
+wine glass,True,16,7,12,6,7,8,14
+zebra,False,12,11,11,0,0,11,12

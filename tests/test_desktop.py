@@ -36,6 +36,17 @@ class TestClosestObject:
         assert AnalysisWorker._select_detection([]) is None
 
 
+class TestWornItems:
+    def test_hat_on_a_person_does_not_beat_the_skis(self):
+        person = detection("person", [100, 0, 300, 400])
+        hat = detection("hat", [150, 0, 260, 90])
+        skis = detection("skis", [80, 380, 330, 420])
+        assert AnalysisWorker._select_detection([person, hat, skis])["label"] == "skis"
+
+    def test_a_hat_on_its_own_is_still_named(self):
+        assert AnalysisWorker._select_detection([detection("hat", [0, 0, 100, 100])])["label"] == "hat"
+
+
 class TestObjectList:
     def test_lists_each_object_once_biggest_first_without_people(self):
         detections = [

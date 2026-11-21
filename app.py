@@ -262,8 +262,10 @@ def merge_with_coco(everyday, coco, coco_names):
     YOLO26 knows only 80 object types but is more reliable on them, so when both
     find the same object, YOLO26's name wins if the everyday model also thought it
     was one of YOLO26's types (a mouse seen from above called a cell phone gets
-    corrected). Objects YOLO26 doesn't know (wallet, keys) keep their name, and
-    objects only one model found are all kept.
+    corrected). Objects YOLO26 doesn't know (wallet, keys) keep their name. And
+    when the everyday model alone reports one of YOLO26's own types where YOLO26
+    saw nothing, that guess is dropped: on the COCO benchmark those were mostly
+    wrong (evaluation/coco-results.md).
     """
     known_to_coco = {COCO_TO_EVERYDAY.get(name, name) for name in coco_names}
     merged = [dict(detection, source="everyday") for detection in everyday]
@@ -281,7 +283,46 @@ def merge_with_coco(everyday, coco, coco_names):
                 match.update(label=label, confidence=detection["confidence"], source="coco")
         else:
             merged.append(dict(detection, label=label, source="coco"))
-    return merged
+    return [d for d in merged if d["source"] == "coco" or d["label"] not in known_to_coco]
+
+
+WORN_ITEMS = {
+    "glasses", "sunglasses", "hat", "cap", "headphones", "earphones", "shirt", "jacket",
+    "shoes", "shoe", "sock", "belt", "watch", "ring", "necklace", "face mask",
+}
+PEOPLE_LABELS = {"person", "people", "hand"}
+
+
+def _plain(label):
+    return label.strip().lower().replace("_", " ")
+
+
+def drop_worn_items(detections):
+    """Remove clothes and accessories that sit on a person in the photo.
+
+    People point the camera at an object, not at someone's hat, so a worn item
+    shouldn't become the closest object just because its box is big (a skier's
+    hat beat the skis in testing). Returns the list unchanged if that would leave
+    no objects at all.
+    """
+    people = [d for d in detections if _plain(d["label"]) in PEOPLE_LABELS]
+    if not people:
+        return detections
+
+    def on_a_person(item):
+        x1, y1, x2, y2 = item["coordinates"]
+        area = max(0, x2 - x1) * max(0, y2 - y1)
+        for person in people:
+            px1, py1, px2, py2 = person["coordinates"]
+            overlap = max(0, min(x2, px2) - max(x1, px1)) * max(0, min(y2, py2) - max(y1, py1))
+            if area and overlap / area >= 0.5:
+                return True
+        return False
+
+    kept = [d for d in detections if not (_plain(d["label"]) in WORN_ITEMS and on_a_person(d))]
+    if any(_plain(d["label"]) not in PEOPLE_LABELS for d in kept):
+        return kept
+    return detections
 
 
 def load_coco_model():
@@ -504,6 +545,7 @@ class AnalysisWorker(threading.Thread):
     def _select_detection(cls, detections):
         if not detections:
             return None
+        detections = drop_worn_items(detections)
         object_detections = [
             detection
             for detection in detections
