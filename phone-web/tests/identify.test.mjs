@@ -10,6 +10,9 @@ test("AI results are read whether they come as data, a Response, or a stream", a
   assert.equal((await readAiResult(new Response(JSON.stringify(plain)))).answer, "A computer mouse.");
   const events = 'data: {"answer":"A computer"}\n\ndata: {"answer":" mouse."}\n\ndata: [DONE]\n\n';
   assert.equal((await readAiResult(new Response(events).body)).answer, "A computer mouse.");
+  // The shape Moondream actually returns on Cloudflare.
+  const wrapped = { result: { answer: "A computer mouse.", finish_reason: "stop" }, usage: {} };
+  assert.equal((await readAiResult(wrapped)).answer, "A computer mouse.");
 });
 
 const SITE = "https://graduation-6j1.pages.dev";

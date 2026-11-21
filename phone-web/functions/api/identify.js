@@ -129,13 +129,17 @@ function normalizeLabel(answer) {
 // Workers AI usually returns plain data, but some models hand back a Response or
 // a stream (server-sent events). Normalise all three to an object with `answer`.
 export async function readAiResult(result) {
-  if (result && typeof result.json === "function" && typeof result.text === "function") {
-    return parseAiText(await result.text(), "response");
+  let value = result;
+  if (value && typeof value.json === "function" && typeof value.text === "function") {
+    value = parseAiText(await value.text(), "response");
+  } else if (value && typeof value.getReader === "function") {
+    value = parseAiText(await new Response(value).text(), "stream");
   }
-  if (result && typeof result.getReader === "function") {
-    return parseAiText(await new Response(result).text(), "stream");
+  // Moondream wraps its output as { result: { answer, … }, usage }, unlike its docs.
+  if (value && typeof value.result === "object" && value.result !== null && !("answer" in value)) {
+    value = value.result;
   }
-  return result;
+  return value;
 }
 
 export function parseAiText(text, kind) {
