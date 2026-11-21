@@ -97,6 +97,34 @@ class TestEverydayObjectDetector:
         assert set(app.DETECTOR_NAMES) == set(app.DETECTOR_CONFIDENCE)
 
 
+class TestCombinedDetectors:
+    COCO = ["person", "cell phone", "mouse", "cup", "book", "laptop"]
+
+    def test_yolo26_corrects_objects_it_knows(self):
+        merged = app.merge_with_coco(
+            [detection("cell phone", [0, 0, 100, 100], 0.52)],
+            [detection("mouse", [2, 0, 102, 100], 0.49)],
+            self.COCO,
+        )
+        assert [d["label"] for d in merged] == ["computer mouse"]
+
+    def test_yolo26_cannot_overrule_objects_it_does_not_know(self):
+        merged = app.merge_with_coco(
+            [detection("wallet", [0, 0, 100, 100], 0.6)],
+            [detection("cell phone", [1, 0, 101, 100], 0.7)],
+            self.COCO,
+        )
+        assert [d["label"] for d in merged] == ["wallet"]
+
+    def test_objects_found_by_one_model_are_kept(self):
+        merged = app.merge_with_coco(
+            [detection("keys", [0, 0, 100, 100], 0.5)],
+            [detection("cup", [500, 0, 600, 100], 0.8)],
+            self.COCO,
+        )
+        assert sorted(d["label"] for d in merged) == ["cup", "keys"]
+
+
 class TestSettingsFile:
     def test_round_trip(self, tmp_path):
         path = tmp_path / "settings.json"

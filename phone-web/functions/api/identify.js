@@ -7,10 +7,14 @@ const DESCRIBE_QUESTION = "What is the main object in this photo? Answer in one 
   + "used to move the pointer on a computer screen.\"). Be specific when you can (a tea bottle, not "
   + "just a bottle) and mention useful visible features such as colour or contents. Do not guess "
   + "details that are not visible.";
-const LABEL_QUESTION = "Read only the visible label text, especially Traditional Chinese characters. "
-  + "Transcribe the characters exactly without translating or guessing. Return JSON only: "
-  + "{\"visible_text\":\"exact text, or empty string if none\",\"product\":\"product name in "
-  + "English if the text identifies it, otherwise empty string\"}.";
+// Worded so the model has no phrase to echo back as fake "label text" (an earlier
+// prompt mentioning "Traditional Chinese characters" got exactly that phrase back).
+const LABEL_QUESTION = "Is any text printed or written on the object? If yes, copy it exactly in its "
+  + "original language and script, without translating. If you cannot read any text, use an empty "
+  + "string. Return JSON only: {\"visible_text\":\"\",\"product\":\"\"} where product is the product "
+  + "name in English if the text names one.";
+// Answers that describe the instructions or say "no text" instead of quoting text.
+const NOT_LABEL_TEXT = /^(none|no( readable| visible)? text|n\/a|empty|unknown)$|traditional chinese|chinese characters|label text|visible text|exact text|original language/i;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HUMAN_LABELS = new Set(["person", "people", "human", "hand", "arm", "finger"]);
 const OBJECT_LABELS = [
@@ -92,7 +96,7 @@ async function readImage(request) {
   return image;
 }
 
-function normalizeLabel(answer) {
+export function normalizeLabel(answer) {
   const knownLabel = OBJECT_LABELS.reduce((bestMatch, candidate) => {
     const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const match = new RegExp(`(^|[^a-z])${escaped}(?=$|[^a-z])`, "i").exec(answer);
@@ -110,8 +114,12 @@ function normalizeLabel(answer) {
     .split(/\r?\n/, 1)[0]
     .replace(/^\s*(?:object|item|answer)\s*[:=-]\s*/i, "")
     .replace(/^[\s"'`]+|[\s"'`]+$/g, "")
+    // "The main object (in this photo) is a blue bus parked on a street."
+    .replace(/^(?:the\s+)?main\s+object(?:\s+in\s+(?:this|the)\s+(?:photo|image|picture))?\s+is\s+/i, "")
     .replace(/^(?:a|an|the)\s+/i, "")
     .replace(/[.!?].*$/, "")
+    // Keep the name, not what follows it ("bus parked on a street" → "bus").
+    .replace(/\s+(?:parked|sitting|lying|standing|placed|resting|held|being|that|which|with|on|in|at|of|for|from|next|near|is|are|used)\b.*$/i, "")
     .replace(/[.,;:]+$/, "")
     .trim()
     .replace(/\s+/g, " ");
@@ -176,7 +184,7 @@ function imageDataUri(image, contentType) {
   return `data:${contentType};base64,${btoa(binary)}`;
 }
 
-function parseRecognition(answer) {
+export function parseRecognition(answer) {
   let objectText = "";
   let visibleText = "";
   let product = "";
@@ -215,7 +223,7 @@ function parseRecognition(answer) {
 
   return {
     label,
-    recognizedText: /^(none|no readable text|n\/a)$/i.test(normalizedVisibleText)
+    recognizedText: NOT_LABEL_TEXT.test(normalizedVisibleText)
       ? ""
       : normalizedVisibleText.slice(0, 240),
     product: product

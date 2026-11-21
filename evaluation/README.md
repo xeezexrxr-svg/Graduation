@@ -33,16 +33,18 @@ description sometimes can. (Or add it to the list and rebuild; see the main READ
 .venv\Scripts\python.exe evaluation\evaluate.py evaluation\photos evaluation\labels.csv
 ```
 
-It prints three numbers and writes `evaluation/results.csv` with every photo's result:
+It prints three numbers and writes `evaluation/results-combined.csv` with every photo's result:
 
 - **Closest object named correctly**: the headline number. How often the app names the
   object the user is pointing at.
 - **Recall**: of all the objects really there, how many it found.
 - **Precision**: of the objects it listed, how many were really there (low = it invents things).
 
-The test uses the same detector and logic as both apps (the phone runs the same model
-in the browser), so the numbers describe both. To compare with the old YOLO26 model, add
-`--model yolo26n.pt --conf 0.3`; that comparison makes a good section in a report. It does not score the cloud
+The test uses the same detectors and logic as both apps (the phone runs the same models
+in the browser), so the numbers describe both. Add `--compare` to score three set-ups on the
+same photos (both detectors combined, as the apps do; the everyday-object model alone; YOLO26
+alone) and get a comparison table: a good section for a report, because it shows why the apps
+combine them. It does not score the cloud
 description sentence; judge a sample of those by hand if you want to report on them.
 
 ## 2. Testing with dyslexic readers

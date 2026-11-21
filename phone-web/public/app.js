@@ -3,6 +3,8 @@
 const MAX_IMAGE_SIDE = 1280;
 const MAX_OCR_IMAGE_SIDE = 2400;
 const JPEG_QUALITY = 0.82;
+// Below this on-device confidence, a name is presented as a guess ("might be").
+const UNSURE_BELOW = 0.6;
 
 const menuToggle = document.querySelector("#menuToggle");
 const featureMenu = document.querySelector("#featureMenu");
@@ -86,6 +88,8 @@ const descriptions = {
   cellphone: "It can be used to call or message people.",
   "mobile phone": "It can be used to call or message people.",
   mouse: "It helps control a pointer on a computer screen.",
+  "computer mouse": "It helps control a pointer on a computer screen.",
+  "remote control": "It is used to control a device from a short distance.",
   pen: "It is a writing tool that uses ink to make marks on paper.",
   person: "A person is someone you can talk with or ask for help.",
   plate: "It is used to hold and serve food.",
@@ -643,9 +647,10 @@ function setRulerView(on) {
   updateTextScanControls();
 }
 
-function renderDescription(label, explanation, recognizedText = "", product = "") {
+// unsure: the name is only a low-confidence guess, so say "might be", not "is".
+function renderDescription(label, explanation, recognizedText = "", product = "", unsure = false) {
   const article = /^[aeiou]/i.test(label) ? "an" : "a";
-  currentDescription = `This is ${article} ${label}. ${explanation}`;
+  currentDescription = `This ${unsure ? "might be" : "is"} ${article} ${label}. ${explanation}`;
   if (product) {
     currentDescription += ` The label suggests this is ${product}.`;
   }
@@ -658,7 +663,7 @@ function renderDescription(label, explanation, recognizedText = "", product = ""
 
   const title = document.createElement("h3");
   title.className = "object-title";
-  title.textContent = label;
+  title.textContent = unsure ? `${label}?` : label;
   const paragraph = document.createElement("p");
   paragraph.className = "object-description";
   const words = splitIntoWords(currentDescription);
@@ -1173,9 +1178,13 @@ async function scanImage() {
       describedOnline = false;
     }
     payload = payload || {};
-    if (closest && !payload.label && !payload.recognizedText) {
+    // The cloud looks at the object closely, so its name wins. Only when it gives
+    // none does the on-device detector's name stand in, and then we say how sure it is.
+    let unsure = false;
+    if (closest && !payload.label) {
       payload.found = true;
       payload.label = closest.label;
+      unsure = closest.confidence < UNSURE_BELOW;
     }
     if (!payload?.found || (!payload.label && !payload.recognizedText)) {
       const modelAnswer = typeof payload?.answer === "string" && payload.answer.trim()
@@ -1208,11 +1217,15 @@ async function scanImage() {
     const product = typeof payload.product === "string"
       ? payload.product.trim().slice(0, 120)
       : "";
-    renderDescription(label, explanation, recognizedText, product);
+    renderDescription(label, explanation, recognizedText, product, unsure);
     resultContent.parentElement.scrollIntoView({
       behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       block: "nearest",
     });
+    if (unsure) {
+      setStatus("Not sure about this one. Try another angle, move closer, or use more light.", "warning");
+      return;
+    }
     if (!describedOnline) {
       setStatus("Named on your phone. The detailed description needs an internet connection, so try again later.", "warning");
       return;

@@ -7,7 +7,7 @@ It comes in two forms that share the same detection model and design:
 | | Phone website (`phone-web/`) | Desktop app (`app.py`) |
 |---|---|---|
 | Best for | Everyday use: point your phone at things | A fixed reading station, or offline use |
-| Object detection | Everyday-object detector (YOLOE, 175 objects) in the browser | The same detector locally (YOLO26 and YOLO-World as options) |
+| Object detection | Everyday-object detector (YOLOE, 175 objects) combined with YOLO26, in the browser | The same pair locally (YOLO26 alone and YOLO-World as options) |
 | Description of the closest object | Cloudflare Workers AI | Cloudflare Workers AI (optional) |
 | Label / page text | Workers AI, plus Tesseract.js for whole pages | EasyOCR, locally |
 | Speech | The phone's built-in voices | Windows voices |
@@ -34,8 +34,15 @@ It comes in two forms that share the same detection model and design:
  read aloud, highlighting each word, on the reader's chosen tint and spacing
 ```
 
-If the cloud step is unavailable, both apps still give the object's name from the
-on-device detector and a short built-in description.
+The cloud's name wins, because it looks at the object closely. If the cloud step is
+unavailable, both apps give the on-device name and a short built-in description, and when
+the detector is less than 60% sure they say so: "This might be a cup."
+
+**Two detectors together.** The everyday-object model knows 175 objects but makes more
+mistakes on common ones (it once called a mouse seen from above a cell phone). YOLO26 knows
+only 80 but is more reliable on those. Both run on every photo: when they find the same
+object, YOLO26's name wins if the everyday model also thought it was one of YOLO26's types;
+objects YOLO26 doesn't know (wallet, keys) keep the everyday model's name.
 
 **Design choices for dyslexic readers**
 - Six background tints (cream, yellow, blue, mint, peach, dark), because the most comfortable colour varies from person to person; text is dark grey on soft colours, never black on white.

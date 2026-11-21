@@ -231,6 +231,70 @@ UI_FONT = "Segoe UI"
 PREFERRED_UI_FONTS = ("Atkinson Hyperlegible Next", "Atkinson Hyperlegible", "Segoe UI")
 
 
+# Below this detector confidence, and with no cloud description, the result is
+# worded as a guess ("This might be a …").
+UNSURE_BELOW = 0.6
+SAME_OBJECT_IOU = 0.45
+# YOLO26's names, written the way vocabulary.txt writes them.
+COCO_TO_EVERYDAY = {
+    "mouse": "computer mouse",
+    "remote": "remote control",
+    "couch": "sofa",
+    "dining table": "table",
+    "donut": "doughnut",
+    "sports ball": "ball",
+    "hair drier": "hair dryer",
+}
+
+
+def box_iou(first, second):
+    width = max(0, min(first[2], second[2]) - max(first[0], second[0]))
+    height = max(0, min(first[3], second[3]) - max(first[1], second[1]))
+    intersection = width * height
+    area = lambda box: max(0, box[2] - box[0]) * max(0, box[3] - box[1])  # noqa: E731
+    union = area(first) + area(second) - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def merge_with_coco(everyday, coco, coco_names):
+    """Combine the everyday-object model's detections with YOLO26's.
+
+    YOLO26 knows only 80 object types but is more reliable on them, so when both
+    find the same object, YOLO26's name wins if the everyday model also thought it
+    was one of YOLO26's types (a mouse seen from above called a cell phone gets
+    corrected). Objects YOLO26 doesn't know (wallet, keys) keep their name, and
+    objects only one model found are all kept.
+    """
+    known_to_coco = {COCO_TO_EVERYDAY.get(name, name) for name in coco_names}
+    merged = [dict(detection, source="everyday") for detection in everyday]
+    for detection in coco:
+        label = COCO_TO_EVERYDAY.get(detection["label"], detection["label"])
+        match = max(
+            merged,
+            key=lambda candidate: box_iou(candidate["coordinates"], detection["coordinates"]),
+            default=None,
+        )
+        if match and box_iou(match["coordinates"], detection["coordinates"]) >= SAME_OBJECT_IOU:
+            if match["label"] in known_to_coco and (
+                match["source"] == "everyday" or detection["confidence"] > match["confidence"]
+            ):
+                match.update(label=label, confidence=detection["confidence"], source="coco")
+        else:
+            merged.append(dict(detection, label=label, source="coco"))
+    return merged
+
+
+def load_coco_model():
+    """YOLO26 for the combined detector, or None if it can't be loaded."""
+    if YOLO is None:
+        return None
+    try:
+        local = APP_DIR / YOLO26_MODEL_FILE
+        return YOLO(str(local) if local.exists() else YOLO26_MODEL_FILE)
+    except Exception:
+        return None
+
+
 SETTINGS_FILE = APP_DIR / "settings.json"
 # Tk variables on the app that are remembered between runs.
 SAVED_SETTINGS = (
@@ -571,7 +635,12 @@ class AnalysisWorker(threading.Thread):
         request = urllib.request.Request(
             CLOUD_VISION_API_URL,
             data=encoded.tobytes(),
-            headers={"Content-Type": "image/jpeg", "X-ClearView-Client": "desktop"},
+            # Cloudflare blocks Python's default "Python-urllib" user agent (error 1010).
+            headers={
+                "Content-Type": "image/jpeg",
+                "X-ClearView-Client": "desktop",
+                "User-Agent": "ClearView-Desktop/1.0",
+            },
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=45) as response:
@@ -586,6 +655,8 @@ class AnalysisWorker(threading.Thread):
         model = None
         active_detector = None
         model_label = ""
+        coco_model = None
+        coco_loaded = False
         ocr_reader = None
         ocr_error = None
         self.events.put(("model_loading", self.detector_choice))
@@ -665,11 +736,22 @@ class AnalysisWorker(threading.Thread):
             try:
                 min_confidence = DETECTOR_CONFIDENCE.get(active_detector, MIN_CONFIDENCE)
                 results = model.predict(frame, verbose=False, conf=min_confidence)
-                if not results or results[0].boxes is None or len(results[0].boxes) == 0:
+                detections = self._read_detections(results[0]) if results else []
+                if active_detector == DETECTOR_CLEARVIEW:
+                    if not coco_loaded:
+                        coco_model = load_coco_model()
+                        coco_loaded = True
+                    if coco_model is not None:
+                        coco_results = coco_model.predict(frame, verbose=False, conf=MIN_CONFIDENCE)
+                        detections = merge_with_coco(
+                            detections,
+                            self._read_detections(coco_results[0]) if coco_results else [],
+                            coco_model.names.values(),
+                        )
+                if not detections:
                     self.events.put(("not_found", None))
                     continue
 
-                detections = self._read_detections(results[0])
                 human_detections = [
                     detection
                     for detection in detections
@@ -749,6 +831,7 @@ class AnalysisWorker(threading.Thread):
                     cloud_details = self._get_cloud_details(frame, detection)
                     detection["cloud_description"] = cloud_details.get("description", "")
                     detection["cloud_product"] = cloud_details.get("product", "")
+                    detection["cloud_label"] = cloud_details.get("label") or ""
                     cloud_text = cloud_details.get("recognizedText", "")
                     if isinstance(cloud_text, str) and cloud_text.strip():
                         if recognized_text and cloud_text.strip().casefold() not in recognized_text.casefold():
@@ -766,6 +849,7 @@ class AnalysisWorker(threading.Thread):
                 ) as error:
                     detection["cloud_description"] = ""
                     detection["cloud_product"] = ""
+                    detection["cloud_label"] = ""
                     detection["cloud_error"] = str(error)
                 self.events.put((
                     "found",
@@ -1932,7 +2016,9 @@ class DyslexiaCameraApp:
         ocr_error = detection.get("ocr_error")
         cloud_description = detection.get("cloud_description", "")
         cloud_product = detection.get("cloud_product", "")
+        cloud_label = detection.get("cloud_label", "")
         cloud_error = detection.get("cloud_error")
+        unsure = not (cloud_description or cloud_label) and confidence < UNSURE_BELOW
         explanation = self.descriptions.get(
             label,
             "It is an everyday object. You can add a simple explanation for it "
@@ -1944,18 +2030,20 @@ class DyslexiaCameraApp:
         elif cloud_description:
             description = cloud_description
         else:
-            description = f"This is {article} {label}. {explanation}"
+            description = f"This {'might be' if unsure else 'is'} {article} {label}. {explanation}"
         if cloud_product and cloud_description:
             description += cloud_description
         if recognized_text:
             description += f" The visible text reads: {recognized_text}."
         other_labels = [
-            other for other in detection.get("all_labels", []) if other != label
+            other for other in detection.get("all_labels", [])
+            if other not in (label, cloud_label)
         ]
         if other_labels:
             description += f" I can also see: {', '.join(other_labels)}."
         self._set_description(description)
-        self.object_name.configure(text=(cloud_product or label).title())
+        title = (cloud_product or cloud_label or label).title()
+        self.object_name.configure(text=f"{title}?" if unsure else title)
         self.confidence_label.configure(text=f"AI confidence: {confidence:.0%}")
         if cloud_error:
             self._set_status(

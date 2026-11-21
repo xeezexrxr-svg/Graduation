@@ -10,10 +10,10 @@ const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(
   `${readFileSync(new URL("../public/detector.js", import.meta.url), "utf8")}
-   globalThis.exported = { decodeDetections, summarizeDetections };`,
+   globalThis.exported = { decodeDetections, summarizeDetections, mergeDetections };`,
   sandbox,
 );
-const { decodeDetections, summarizeDetections } = sandbox.exported;
+const { decodeDetections, summarizeDetections, mergeDetections } = sandbox.exported;
 
 const LABELS = ["person", "cup", "laptop", "book", "bottle", "wallet"];
 const EXTRA_ROWS = 2; // the real model adds mask rows after the scores; they must be ignored
@@ -82,4 +82,36 @@ test("the published label list matches vocabulary.txt", () => {
     .map((line) => line.trim().toLowerCase())
     .filter((line) => line && !line.startsWith("#"));
   assert.deepEqual(labels, [...new Set(vocabulary)]);
+});
+
+// --- Combining the everyday-object model with YOLO26 ---
+const COCO = ["person", "cell phone", "mouse", "cup", "book", "laptop"];
+const box = (x) => [x, 0, x + 100, 100];
+const names = (list) => [...list].map((d) => d.label);
+
+test("YOLO26 corrects the everyday model on objects it knows (mouse seen as a phone)", () => {
+  const merged = mergeDetections(
+    [{ label: "cell phone", confidence: 0.52, box: box(0) }],
+    [{ label: "mouse", confidence: 0.49, box: box(2) }],
+    COCO,
+  );
+  assert.deepEqual(names(merged), ["computer mouse"]);
+});
+
+test("YOLO26 can't overrule objects it doesn't know (a wallet stays a wallet)", () => {
+  const merged = mergeDetections(
+    [{ label: "wallet", confidence: 0.6, box: box(0) }],
+    [{ label: "cell phone", confidence: 0.7, box: box(1) }],
+    COCO,
+  );
+  assert.deepEqual(names(merged), ["wallet"]);
+});
+
+test("objects found by only one model are all kept", () => {
+  const merged = mergeDetections(
+    [{ label: "keys", confidence: 0.5, box: box(0) }],
+    [{ label: "cup", confidence: 0.8, box: box(500) }],
+    COCO,
+  );
+  assert.deepEqual(names(merged).sort(), ["cup", "keys"]);
 });
