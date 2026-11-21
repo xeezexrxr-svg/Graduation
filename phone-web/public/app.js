@@ -909,16 +909,29 @@ async function scanImage() {
   }
   scanButton.disabled = true;
   scanButton.textContent = "Identifying…";
-  setStatus("Looking for the main everyday object…");
+  setStatus("Finding objects in the photo…");
   try {
+    let detected = { closest: null, objects: [] };
+    try {
+      detected = await detectObjects(selectedImage);
+    } catch (error) {
+      console.error("On-device object detection failed; describing the whole photo", error);
+    }
+    const closest = detected.closest;
+    const uploadImage = closest ? await cropDetection(selectedImage, closest) : selectedImage;
+    setStatus("Describing the closest object…");
     const response = await fetch("/api/identify", {
       method: "POST",
-      headers: { "Content-Type": selectedImage.type || "image/jpeg" },
-      body: selectedImage,
+      headers: { "Content-Type": uploadImage.type || "image/jpeg" },
+      body: uploadImage,
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       throw new Error(payload?.error || "Could not identify that photo. Please try again.");
+    }
+    if (closest && payload && !payload.label && !payload.recognizedText) {
+      payload.found = true;
+      payload.label = closest.label;
     }
     if (!payload?.found || (!payload.label && !payload.recognizedText)) {
       const modelAnswer = typeof payload?.answer === "string" && payload.answer.trim()
@@ -939,12 +952,15 @@ async function scanImage() {
     const modelDescription = typeof payload.description === "string"
       ? payload.description.trim().slice(0, 360)
       : "";
-    const explanation = modelDescription && modelDescription.toLowerCase() !== label.toLowerCase()
+    const otherObjects = detected.objects.filter((name) => name !== closest?.label
+      && name !== label.toLowerCase());
+    const alsoSeen = otherObjects.length ? ` I can also see: ${otherObjects.join(", ")}.` : "";
+    const explanation = (modelDescription && modelDescription.toLowerCase() !== label.toLowerCase()
       ? modelDescription
       : label === "Labeled item"
         ? "I could read some label text, but could not identify the object itself."
         : descriptions[label.toLowerCase()]
-          || "It is an everyday object. Its exact purpose may depend on the item.";
+          || "It is an everyday object. Its exact purpose may depend on the item.") + alsoSeen;
     const product = typeof payload.product === "string"
       ? payload.product.trim().slice(0, 120)
       : "";
@@ -965,6 +981,9 @@ async function scanImage() {
   }
 }
 
+const warmUpDetector = () => loadDetector().catch(() => {});
+cameraButton.addEventListener("click", warmUpDetector);
+photoButton.addEventListener("click", warmUpDetector);
 cameraButton.addEventListener("click", () => {
   if (cameraStream) {
     capturePhoto();
