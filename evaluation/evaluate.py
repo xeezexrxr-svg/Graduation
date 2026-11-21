@@ -30,15 +30,19 @@ sys.path.insert(0, str(PROJECT))
 import cv2  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 
-from app import (  # noqa: E402
+from clearview.config import (  # noqa: E402
     CLEARVIEW_MODEL_FILE,
-    COCO_TO_EVERYDAY,
     DETECTOR_CLEARVIEW,
     DETECTOR_CONFIDENCE,
     MIN_CONFIDENCE,
-    AnalysisWorker,
+)
+from clearview.detection import (  # noqa: E402
+    COCO_TO_EVERYDAY,
+    list_labels,
     load_coco_model,
     merge_with_coco,
+    read_detections,
+    select_closest,
 )
 
 SETUPS = ("combined", "everyday", "yolo26")
@@ -60,7 +64,7 @@ class Detector:
 
     def _run(self, model, frame, confidence):
         results = model.predict(frame, verbose=False, conf=confidence)
-        return AnalysisWorker._read_detections(results[0]) if results else []
+        return read_detections(results[0]) if results else []
 
     def detect(self, frame):
         everyday = (
@@ -85,7 +89,7 @@ def score(detector, photos, rows):
             print(f"Skipped: could not open {photo.name}")
             continue
         detections = detector.detect(frame)
-        chosen = AnalysisWorker._select_detection(detections)
+        chosen = select_closest(detections)
         expected_closest = row["closest"].strip().lower()
         predicted_closest = chosen["label"].strip().lower().replace("_", " ") if chosen else ""
         results.append({
@@ -94,7 +98,7 @@ def score(detector, photos, rows):
             "predicted_closest": predicted_closest,
             "closest_correct": predicted_closest == expected_closest,
             "expected_all": parse_names(row.get("also_visible")) | {expected_closest},
-            "predicted_all": set(AnalysisWorker._list_labels(detections)),
+            "predicted_all": set(list_labels(detections)),
         })
     return results
 

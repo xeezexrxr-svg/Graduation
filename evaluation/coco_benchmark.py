@@ -40,17 +40,20 @@ sys.path.insert(0, str(PROJECT))
 import cv2  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 
-from app import (  # noqa: E402
+from clearview.config import (  # noqa: E402
     CLEARVIEW_MODEL_FILE,
-    COCO_TO_EVERYDAY,
     DETECTOR_CLEARVIEW,
     DETECTOR_CONFIDENCE,
     MIN_CONFIDENCE,
-    AnalysisWorker,
+)
+from clearview.detection import (  # noqa: E402
+    COCO_TO_EVERYDAY,
+    box_area,
     box_iou,
     drop_worn_items,
     load_coco_model,
     merge_with_coco,
+    read_detections,
 )
 
 LABELS_ZIP = "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco2017labels.zip"
@@ -129,7 +132,7 @@ def fetch_images(image_ids):
 
 def run(model, frame, confidence):
     results = model.predict(frame, verbose=False, conf=confidence)
-    return AnalysisWorker._read_detections(results[0]) if results else []
+    return read_detections(results[0]) if results else []
 
 
 def everyday_name(name):
@@ -139,7 +142,7 @@ def everyday_name(name):
 def largest_object(detections):
     """The apps' closest object: the largest non-person, ignoring things worn by people."""
     things = [d for d in drop_worn_items(detections) if d["label"] != "person"]
-    return max(things, key=lambda d: AnalysisWorker._box_area(d), default=None)
+    return max(things, key=box_area, default=None)
 
 
 def score_image(truth, predictions, tally):

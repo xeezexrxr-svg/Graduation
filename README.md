@@ -88,7 +88,7 @@ The mobile website and its Cloudflare Pages deployment are in `phone-web`. See `
 - Plain-language explanations and repeatable Windows SAPI text-to-speech playback with sentence and current-word highlighting that follows speech
 - Text settings (font, bold, size, letter spacing, line spacing) and voice settings (voice, speed, volume) side by side under the result
 - Automatic speech toggle, repeat control, and confidence display
-- Editable object descriptions in `object_descriptions.json`
+- Editable object descriptions in `phone-web/public/object_descriptions.json`, shared with the phone site
 - Clear status messages if the camera, model, or speech engine is unavailable
 
 ## Change which objects it knows
@@ -103,7 +103,7 @@ This writes `clearview-detector.pt` (desktop) and `phone-web/public/models/clear
 
 ## Add or change an explanation
 
-Open `object_descriptions.json` and add a lowercase object name and a short explanation. For example:
+Open `phone-web/public/object_descriptions.json` and add a lowercase object name and a short explanation. Both apps read this one file (the phone site serves it), so a change shows up in both. For example:
 
 ```json
 {
@@ -129,7 +129,7 @@ cd phone-web; node --test                    # phone detector and API checks
 ## Notes and limitations
 
 - "Closest" means the largest object in the picture; a camera can't measure distance. A big object further away can win over a small one nearby.
-- The everyday-object detector only names things in `vocabulary.txt`, and uses a higher confidence bar (40%) than YOLO26 (30%) because open-vocabulary models make more weak guesses. **YOLO26** (80 fixed object types, very reliable on those) and the **YOLO-World backup** (prompts from `object_descriptions.json`) are in the top-left menu. Both models can miss or misidentify objects; when a hand/person is detected, the app analyzes a padded crop and favors overlapping non-wearable objects over clothing and glasses. Confidence is shown to help users judge results.
+- The everyday-object detector only names things in `vocabulary.txt`, and uses a higher confidence bar (40%) than YOLO26 (30%) because open-vocabulary models make more weak guesses. **YOLO26** (80 fixed object types, very reliable on those) and the **YOLO-World backup** (prompts from `phone-web/public/object_descriptions.json`) are in the top-left menu. Both models can miss or misidentify objects; when a hand/person is detected, the app analyzes a padded crop and favors overlapping non-wearable objects over clothing and glasses. Confidence is shown to help users judge results.
 - OCR can provide clues from labels or packaging, but it does not change YOLO's confidence and may misread text. If OCR cannot initialize, object detection continues without it.
 - Camera brightness changes the app's camera preview and object-identification image, not the laptop display.
 - Chinese text is read with an installed Chinese Windows voice when one exists; install one from Windows Settings → Time & language → Speech if Chinese is read incorrectly.
@@ -139,10 +139,15 @@ cd phone-web; node --test                    # phone detector and API checks
 
 ## Project files
 
-- `app.py` — desktop application, camera, detection, and speech workers
+- `app.py` — starts the desktop app; its code is in `clearview/`:
+  - `config.py` file paths, detector names and thresholds · `deps.py` optional libraries
+  - `palette.py` the six reading tints · `language.py` Chinese text and voices
+  - `detection.py` box maths, the closest-object rule, merging the two detectors
+  - `analysis.py`, `camera.py`, `speech.py` the background workers · `storage.py` settings and descriptions
+  - `ui.py` the window
 - `vocabulary.txt` and `build_detector.py` — the objects the detector looks for, and the script that builds it
 - `phone-web/` — mobile website and Cloudflare Pages Function
-- `object_descriptions.json` — editable explanations shown and spoken by the app
+- `phone-web/public/object_descriptions.json` — short explanations shown and spoken by both apps
 - `tests/` — desktop tests; `phone-web/tests/` — phone tests
 - `evaluation/` — accuracy script and user-testing kit
 - `requirements.txt` — Python dependencies

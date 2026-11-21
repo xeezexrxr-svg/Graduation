@@ -70,39 +70,17 @@ let rulerLines = [];
 let rulerIndex = 0;
 let rulerParts = null;
 
-const descriptions = {
-  apple: "It is a crisp fruit people can eat as a snack or add to a meal.",
-  backpack: "It is used to carry items on your back.",
-  banana: "It is a soft, sweet fruit with a yellow peel.",
-  book: "It contains pages that people can read to learn or enjoy a story.",
-  bottle: "It can hold drinks, such as water.",
-  cup: "It is used for drinking hot or cold drinks.",
-  fork: "It helps people pick up and eat food.",
-  glasses: "They help people see more clearly when worn in front of the eyes.",
-  handbag: "It is used to carry personal items.",
-  headphones: "They are worn over or in the ears to listen to sound.",
-  keyboard: "It is used to type letters and numbers into a computer.",
-  laptop: "It is a portable computer for work, learning, and communication.",
-  phone: "It can be used to call or message people.",
-  "cell phone": "It can be used to call or message people.",
-  cellphone: "It can be used to call or message people.",
-  "mobile phone": "It can be used to call or message people.",
-  mouse: "It helps control a pointer on a computer screen.",
-  "computer mouse": "It helps control a pointer on a computer screen.",
-  "remote control": "It is used to control a device from a short distance.",
-  pen: "It is a writing tool that uses ink to make marks on paper.",
-  person: "A person is someone you can talk with or ask for help.",
-  plate: "It is used to hold and serve food.",
-  remote: "It is used to control a device from a short distance.",
-  scissors: "They are used to cut paper and other materials. Handle them carefully.",
-  shoe: "It protects the foot and is worn for walking.",
-  shoes: "They protect the feet and are worn for walking.",
-  spoon: "It helps people eat or serve food.",
-  stapler: "It joins pieces of paper together using small metal staples.",
-  toothbrush: "It is used with toothpaste to clean teeth.",
-  umbrella: "It helps protect people from rain or strong sun.",
-  wallet: "It is a small case used to carry money and cards.",
-};
+// Short built-in descriptions, shared with the desktop app. Used when the cloud
+// can't describe the object; until the file loads, a general sentence is used.
+let descriptions = {};
+fetch("/object_descriptions.json")
+  .then((response) => (response.ok ? response.json() : {}))
+  .then((loaded) => {
+    descriptions = Object.fromEntries(
+      Object.entries(loaded).map(([name, text]) => [name.trim().toLowerCase(), text]),
+    );
+  })
+  .catch((error) => console.error("Could not load object descriptions", error));
 
 function setStatus(message, kind = "info") {
   scanStatus.textContent = message;
@@ -424,16 +402,11 @@ function prepareTextPhoto(file) {
 }
 
 function splitIntoWords(text) {
-  const wordPattern = /[\p{L}\p{N}_]+(?:['’][\p{L}\p{N}_]+)*/gu;
-  const words = [];
-  for (const match of text.matchAll(wordPattern)) {
-    words.push({
-      start: match.index,
-      end: match.index + match[0].length,
-      text: match[0],
-    });
-  }
-  return words;
+  return [...text.matchAll(READING_WORD)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+    text: match[0],
+  }));
 }
 
 function sentenceRangeAt(text, index) {
@@ -446,58 +419,59 @@ function sentenceRangeAt(text, index) {
   return { start: 0, end: text.length };
 }
 
-function renderTextReadingPreview(text) {
-  textReadingPreview.style.height = `${recognizedText.offsetHeight}px`;
-  const wordPattern = /\p{Script=Han}|[\p{L}\p{N}_]+(?:['’][\p{L}\p{N}_]+)*/gu;
-  const words = [...text.matchAll(wordPattern)].map((match) => ({
-    start: match.index,
-    end: match.index + match[0].length,
-    text: match[0],
-  }));
-  const sentences = [];
-  textPreviewWords = [];
-  textReadingPreview.replaceChildren();
-  textReadingPreview.scrollTop = 0;
+// Wraps text in sentence and word spans so read-aloud can highlight them.
+// Chinese characters count as separate words (Chinese voices report them one by
+// one). Appends to `parent` and returns the words with their elements.
+const READING_WORD = /\p{Script=Han}|[\p{L}\p{N}_]+(?:['’][\p{L}\p{N}_]+)*/gu;
 
-  for (const word of words) {
-    const range = sentenceRangeAt(text, word.start);
-    let sentence = sentences.find((item) => item.start === range.start && item.end === range.end);
-    if (!sentence) {
-      sentence = { ...range, element: document.createElement("span") };
-      sentence.element.className = "reading-sentence";
-      sentences.push(sentence);
+function renderReadableText(parent, text) {
+  const sentences = new Map();
+  const words = [];
+  for (const match of text.matchAll(READING_WORD)) {
+    const range = sentenceRangeAt(text, match.index);
+    const key = `${range.start}:${range.end}`;
+    if (!sentences.has(key)) {
+      const element = document.createElement("span");
+      element.className = "reading-sentence";
+      sentences.set(key, { ...range, element, words: [] });
     }
+    const sentence = sentences.get(key);
     const element = document.createElement("span");
-    element.textContent = word.text;
-    sentence.element.append(element);
-    textPreviewWords.push({ ...word, element, sentenceElement: sentence.element });
+    element.textContent = match[0];
+    const word = {
+      start: match.index,
+      end: match.index + match[0].length,
+      text: match[0],
+      element,
+      sentenceElement: sentence.element,
+    };
+    sentence.words.push(word);
+    words.push(word);
   }
 
+  // Assemble in order, keeping the spaces and punctuation between words.
   let cursor = 0;
-  for (const sentence of sentences.sort((left, right) => left.start - right.start)) {
-    if (sentence.start > cursor) {
-      textReadingPreview.append(document.createTextNode(text.slice(cursor, sentence.start)));
+  for (const sentence of [...sentences.values()].sort((left, right) => left.start - right.start)) {
+    if (sentence.start > cursor) parent.append(text.slice(cursor, sentence.start));
+    let inner = sentence.start;
+    for (const word of sentence.words) {
+      if (word.start > inner) sentence.element.append(text.slice(inner, word.start));
+      sentence.element.append(word.element);
+      inner = word.end;
     }
-    const sentenceWords = textPreviewWords.filter((word) => word.sentenceElement === sentence.element);
-    let sentenceCursor = sentence.start;
-    for (const word of sentenceWords) {
-      if (word.start > sentenceCursor) {
-        sentence.element.insertBefore(
-          document.createTextNode(text.slice(sentenceCursor, word.start)),
-          word.element,
-        );
-      }
-      sentenceCursor = word.end;
-    }
-    if (sentenceCursor < sentence.end) {
-      sentence.element.append(document.createTextNode(text.slice(sentenceCursor, sentence.end)));
-    }
-    textReadingPreview.append(sentence.element);
+    if (inner < sentence.end) sentence.element.append(text.slice(inner, sentence.end));
+    parent.append(sentence.element);
     cursor = sentence.end;
   }
-  if (cursor < text.length) {
-    textReadingPreview.append(document.createTextNode(text.slice(cursor)));
-  }
+  if (cursor < text.length) parent.append(text.slice(cursor));
+  return words;
+}
+
+function renderTextReadingPreview(text) {
+  textReadingPreview.style.height = `${recognizedText.offsetHeight}px`;
+  textReadingPreview.replaceChildren();
+  textReadingPreview.scrollTop = 0;
+  textPreviewWords = renderReadableText(textReadingPreview, text);
   recognizedText.hidden = true;
   textReadingPreview.hidden = false;
   attachRuler();
@@ -657,7 +631,6 @@ function renderDescription(label, explanation, recognizedText = "", product = ""
   if (recognizedText) {
     currentDescription += ` The visible text reads: ${recognizedText}.`;
   }
-  wordElements = [];
   activeWord = null;
   resultContent.replaceChildren();
 
@@ -666,51 +639,7 @@ function renderDescription(label, explanation, recognizedText = "", product = ""
   title.textContent = unsure ? `${label}?` : label;
   const paragraph = document.createElement("p");
   paragraph.className = "object-description";
-  const words = splitIntoWords(currentDescription);
-  const sentences = [];
-  for (const word of words) {
-    const range = sentenceRangeAt(currentDescription, word.start);
-    let sentence = sentences.find((item) => item.start === range.start && item.end === range.end);
-    if (!sentence) {
-      sentence = { ...range, element: document.createElement("span") };
-      sentence.element.className = "reading-sentence";
-      sentences.push(sentence);
-    }
-    const wordElement = document.createElement("span");
-    wordElement.textContent = word.text;
-    sentence.element.append(wordElement);
-    wordElements.push({
-      ...word,
-      element: wordElement,
-      sentenceElement: sentence.element,
-    });
-  }
-
-  let cursor = 0;
-  for (const sentence of sentences.sort((left, right) => left.start - right.start)) {
-    if (sentence.start > cursor) {
-      paragraph.append(document.createTextNode(currentDescription.slice(cursor, sentence.start)));
-    }
-    const sentenceWords = wordElements.filter((word) => word.sentenceElement === sentence.element);
-    let sentenceCursor = sentence.start;
-    for (const word of sentenceWords) {
-      if (word.start > sentenceCursor) {
-        sentence.element.insertBefore(
-          document.createTextNode(currentDescription.slice(sentenceCursor, word.start)),
-          word.element,
-        );
-      }
-      sentenceCursor = word.end;
-    }
-    if (sentenceCursor < sentence.end) {
-      sentence.element.append(document.createTextNode(currentDescription.slice(sentenceCursor, sentence.end)));
-    }
-    paragraph.append(sentence.element);
-    cursor = sentence.end;
-  }
-  if (cursor < currentDescription.length) {
-    paragraph.append(document.createTextNode(currentDescription.slice(cursor)));
-  }
+  wordElements = renderReadableText(paragraph, currentDescription);
   resultContent.append(title, paragraph);
   readButton.disabled = !("speechSynthesis" in window);
 }
@@ -1138,6 +1067,80 @@ function readScannerText(selectedOnly) {
   setTextScanStatus(selectedOnly ? "Reading selected text…" : "Reading all recognized text…", "success");
 }
 
+// Sends the photo (or the closest object's crop) to the ClearView cloud.
+async function askCloud(image) {
+  const response = await fetch("/api/identify", {
+    method: "POST",
+    headers: {
+      "Content-Type": image.type || "image/jpeg",
+      "X-ClearView-Client": "phone",
+    },
+    body: image,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || "Could not identify that photo. Please try again.");
+  }
+  return payload || {};
+}
+
+function noObjectMessage(payload) {
+  const modelAnswer = typeof payload?.answer === "string" && payload.answer.trim()
+    ? ` The AI replied: “${payload.answer.trim()}”`
+    : ` The AI returned no caption${Array.isArray(payload?.modelFields) && payload.modelFields.length
+      ? ` (response fields: ${payload.modelFields.join(", ")})`
+      : ""}${payload?.finishReason ? ` (finish: ${payload.finishReason})` : ""}${payload?.responseSummary
+      ? ` (response: ${payload.responseSummary})`
+      : ""}.`;
+  return `I could not identify a clear everyday object.${modelAnswer}`;
+}
+
+const trimmed = (value, limit) => (typeof value === "string" ? value.trim().slice(0, limit) : "");
+
+// Decides what to show and say. The cloud looks at the object closely, so its
+// name wins; only when it gives none does the on-device detector's name stand
+// in, and then we say how sure it is ("might be").
+function buildResult(payload, detected) {
+  const { closest, objects } = detected;
+  const unsure = Boolean(closest && !payload.label && closest.confidence < UNSURE_BELOW);
+  const label = trimmed(payload.label, 80) || closest?.label || (payload.recognizedText ? "Labeled item" : "");
+  if (!label) throw new Error(noObjectMessage(payload));
+
+  const description = trimmed(payload.description, 360);
+  const otherObjects = objects.filter((name) => name !== closest?.label && name !== label.toLowerCase());
+  const alsoSeen = otherObjects.length ? ` I can also see: ${otherObjects.join(", ")}.` : "";
+  const explanation = description && description.toLowerCase() !== label.toLowerCase()
+    ? description
+    : label === "Labeled item"
+      ? "I could read some label text, but could not identify the object itself."
+      : descriptions[label.toLowerCase()] || "It is an everyday object. Its exact purpose may depend on the item.";
+  return {
+    label,
+    explanation: explanation + alsoSeen,
+    recognizedText: trimmed(payload.recognizedText, 240),
+    product: trimmed(payload.product, 120),
+    unsure,
+  };
+}
+
+function resultStatus(result, payload, describedOnline) {
+  if (result.unsure) {
+    return ["Not sure about this one. Try another angle, move closer, or use more light.", "warning"];
+  }
+  if (!describedOnline) {
+    return ["Named on your phone. The detailed description needs an internet connection, so try again later.", "warning"];
+  }
+  if (result.recognizedText) {
+    return ["Label text read. Check the text and product identification; AI can make mistakes.", "success"];
+  }
+  return [
+    payload.textReaderAvailable === false
+      ? "Object identified, but label reading returned no text. Try scanning a closer, sharper photo."
+      : "Object identified, but I couldn't read clear label text. Move closer and keep the label in focus.",
+    "warning",
+  ];
+}
+
 async function scanImage() {
   if (!selectedImage) {
     setStatus("Capture a photo or choose one before scanning.", "error");
@@ -1147,97 +1150,35 @@ async function scanImage() {
   scanButton.textContent = "Identifying…";
   setStatus("Finding objects in the photo…");
   try {
+    // 1. Find every object on the phone.
     let detected = { closest: null, objects: [] };
     try {
       detected = await detectObjects(selectedImage);
     } catch (error) {
       console.error("On-device object detection failed; describing the whole photo", error);
     }
-    const closest = detected.closest;
-    const uploadImage = closest ? await cropDetection(selectedImage, closest) : selectedImage;
+
+    // 2. Ask the cloud about the closest one; if that fails, use the on-device name.
     setStatus("Describing the closest object…");
-    let payload = null;
+    const upload = detected.closest ? await cropDetection(selectedImage, detected.closest) : selectedImage;
+    let payload = {};
     let describedOnline = true;
     try {
-      const response = await fetch("/api/identify", {
-        method: "POST",
-        headers: {
-          "Content-Type": uploadImage.type || "image/jpeg",
-          "X-ClearView-Client": "phone",
-        },
-        body: uploadImage,
-      });
-      payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || "Could not identify that photo. Please try again.");
-      }
+      payload = await askCloud(upload);
     } catch (error) {
-      if (!closest) throw error;
+      if (!detected.closest) throw error;
       console.error("Online description failed; using the on-device name", error);
-      payload = null;
       describedOnline = false;
     }
-    payload = payload || {};
-    // The cloud looks at the object closely, so its name wins. Only when it gives
-    // none does the on-device detector's name stand in, and then we say how sure it is.
-    let unsure = false;
-    if (closest && !payload.label) {
-      payload.found = true;
-      payload.label = closest.label;
-      unsure = closest.confidence < UNSURE_BELOW;
-    }
-    if (!payload?.found || (!payload.label && !payload.recognizedText)) {
-      const modelAnswer = typeof payload?.answer === "string" && payload.answer.trim()
-        ? ` The AI replied: “${payload.answer.trim()}”`
-        : ` The AI returned no caption${Array.isArray(payload?.modelFields) && payload.modelFields.length
-          ? ` (response fields: ${payload.modelFields.join(", ")})`
-          : ""}${payload?.finishReason ? ` (finish: ${payload.finishReason})` : ""}${payload?.responseSummary
-          ? ` (response: ${payload.responseSummary})`
-          : ""}.`;
-      throw new Error(`I could not identify a clear everyday object.${modelAnswer}`);
-    }
-    const recognizedText = typeof payload.recognizedText === "string"
-      ? payload.recognizedText.trim().slice(0, 240)
-      : "";
-    const label = typeof payload.label === "string" && payload.label.trim()
-      ? payload.label.trim()
-      : "Labeled item";
-    const modelDescription = typeof payload.description === "string"
-      ? payload.description.trim().slice(0, 360)
-      : "";
-    const otherObjects = detected.objects.filter((name) => name !== closest?.label
-      && name !== label.toLowerCase());
-    const alsoSeen = otherObjects.length ? ` I can also see: ${otherObjects.join(", ")}.` : "";
-    const explanation = (modelDescription && modelDescription.toLowerCase() !== label.toLowerCase()
-      ? modelDescription
-      : label === "Labeled item"
-        ? "I could read some label text, but could not identify the object itself."
-        : descriptions[label.toLowerCase()]
-          || "It is an everyday object. Its exact purpose may depend on the item.") + alsoSeen;
-    const product = typeof payload.product === "string"
-      ? payload.product.trim().slice(0, 120)
-      : "";
-    renderDescription(label, explanation, recognizedText, product, unsure);
+
+    // 3. Show it and say how sure we are.
+    const result = buildResult(payload, detected);
+    renderDescription(result.label, result.explanation, result.recognizedText, result.product, result.unsure);
     resultContent.parentElement.scrollIntoView({
       behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       block: "nearest",
     });
-    if (unsure) {
-      setStatus("Not sure about this one. Try another angle, move closer, or use more light.", "warning");
-      return;
-    }
-    if (!describedOnline) {
-      setStatus("Named on your phone. The detailed description needs an internet connection, so try again later.", "warning");
-      return;
-    }
-    setStatus(
-      recognizedText
-        ? "Label text read. Check the text and product identification; AI can make mistakes."
-        : payload.textReaderAvailable === false
-          ? "Object identified, but label reading returned no text. Try scanning a closer, sharper photo."
-          : "Object identified, but I couldn't read clear label text. Move closer and keep the label in focus.",
-      recognizedText ? "success" : "warning",
-    );
+    setStatus(...resultStatus(result, payload, describedOnline));
   } catch (error) {
     setStatus(error.message || "Could not identify that photo. Please try again.", "error");
   } finally {
