@@ -1,16 +1,19 @@
 "use strict";
 
-// On-device object detection with the same YOLO26 model the desktop app uses.
+// On-device object detection with ClearView's everyday-object model (YOLOE),
+// built from vocabulary.txt by build_detector.py; the desktop app uses the same list.
 const ORT_VERSION = "1.20.1";
-const DETECTOR_MODEL_URL = "/models/yolo26n.onnx";
+const DETECTOR_MODEL_URL = "/models/clearview-detector.onnx";
+const DETECTOR_LABELS_URL = "/models/labels.json";
 const DETECTOR_INPUT_SIZE = 640;
-const DETECTOR_MIN_SCORE = 0.3;
+// Open-vocabulary models make more weak guesses, so the bar is higher than YOLO26's 0.3.
+const DETECTOR_MIN_SCORE = 0.4;
 const DETECTOR_IOU_LIMIT = 0.45;
 const DETECTOR_HUMAN_LABELS = new Set(["person"]);
-const COCO_LABELS = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"];
 
 let detectorSession = null;
 
+// Resolves to { session, labels }.
 function loadDetector() {
   if (!detectorSession) {
     if (!globalThis.ort) {
@@ -18,9 +21,13 @@ function loadDetector() {
     }
     ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
     ort.env.wasm.numThreads = 1;
-    detectorSession = ort.InferenceSession.create(DETECTOR_MODEL_URL, {
-      executionProviders: ["wasm"],
-    }).catch((error) => {
+    detectorSession = Promise.all([
+      ort.InferenceSession.create(DETECTOR_MODEL_URL, { executionProviders: ["wasm"] }),
+      fetch(DETECTOR_LABELS_URL).then((response) => {
+        if (!response.ok) throw new Error("The object list did not load.");
+        return response.json();
+      }),
+    ]).then(([session, labels]) => ({ session, labels })).catch((error) => {
       detectorSession = null;
       throw error;
     });
@@ -40,10 +47,11 @@ function boxIou(first, second) {
   return union > 0 ? intersection / union : 0;
 }
 
-// output: model data shaped [84, candidates] (cx, cy, w, h, then 80 class scores).
+// output: model data shaped [rows, candidates]: cx, cy, w, h, then one score per
+// label (any rows after that, such as mask data, are ignored).
 // scale: how much the photo was shrunk to fit the 640px model input.
-function decodeDetections(output, candidates, scale) {
-  const classCount = COCO_LABELS.length;
+function decodeDetections(output, candidates, scale, labels) {
+  const classCount = labels.length;
   const found = [];
   for (let index = 0; index < candidates; index += 1) {
     let bestClass = 0;
@@ -61,7 +69,7 @@ function decodeDetections(output, candidates, scale) {
     const width = output[2 * candidates + index] / scale;
     const height = output[3 * candidates + index] / scale;
     found.push({
-      label: COCO_LABELS[bestClass],
+      label: labels[bestClass],
       confidence: bestScore,
       box: [centerX - width / 2, centerY - height / 2, centerX + width / 2, centerY + height / 2],
     });
@@ -90,7 +98,7 @@ function summarizeDetections(detections) {
 }
 
 async function detectObjects(blob) {
-  const [session, bitmap] = await Promise.all([loadDetector(), createImageBitmap(blob)]);
+  const [{ session, labels }, bitmap] = await Promise.all([loadDetector(), createImageBitmap(blob)]);
   try {
     const scale = DETECTOR_INPUT_SIZE / Math.max(bitmap.width, bitmap.height);
     const canvas = document.createElement("canvas");
@@ -113,7 +121,7 @@ async function detectObjects(blob) {
     const tensor = new ort.Tensor("float32", input, [1, 3, DETECTOR_INPUT_SIZE, DETECTOR_INPUT_SIZE]);
     const results = await session.run({ [session.inputNames[0]]: tensor });
     const output = results[session.outputNames[0]];
-    return summarizeDetections(decodeDetections(output.data, output.dims[2], scale));
+    return summarizeDetections(decodeDetections(output.data, output.dims[2], scale, labels));
   } finally {
     bitmap.close();
   }

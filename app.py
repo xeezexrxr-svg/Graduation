@@ -43,10 +43,24 @@ APP_DIR = Path(__file__).resolve().parent
 DESCRIPTIONS_FILE = APP_DIR / "object_descriptions.json"
 YOLO_WORLD_MODEL_FILE = "yolov8s-worldv2.pt"
 YOLO26_MODEL_FILE = "yolo26n.pt"
+# Built from vocabulary.txt by build_detector.py; the phone uses the same list.
+CLEARVIEW_MODEL_FILE = "clearview-detector.pt"
+DETECTOR_CLEARVIEW = "clearview"
 DETECTOR_YOLO26 = "yolo26"
 DETECTOR_YOLO_WORLD = "yolo-world"
+DETECTOR_NAMES = {
+    DETECTOR_CLEARVIEW: "the everyday-object detector",
+    DETECTOR_YOLO26: "YOLO26",
+    DETECTOR_YOLO_WORLD: "the YOLO-World backup",
+}
 CLOUD_VISION_API_URL = "https://graduation-6j1.pages.dev/api/identify"
 MIN_CONFIDENCE = 0.30
+# The open-vocabulary detector makes more weak guesses, so it needs a higher bar.
+DETECTOR_CONFIDENCE = {
+    DETECTOR_CLEARVIEW: 0.40,
+    DETECTOR_YOLO26: MIN_CONFIDENCE,
+    DETECTOR_YOLO_WORLD: MIN_CONFIDENCE,
+}
 PREVIEW_SIZE = (800, 480)
 
 DEFAULT_DESCRIPTIONS = {
@@ -371,9 +385,12 @@ class AnalysisWorker(threading.Thread):
     """Load YOLO once, then process requested frames off the UI thread."""
 
     HUMAN_LABELS = {"person", "people", "hand"}
-    WEARABLE_LABELS = {"glasses", "hat", "headphones", "shirt", "shoes"}
+    WEARABLE_LABELS = {
+        "glasses", "sunglasses", "hat", "cap", "headphones", "earphones", "shirt",
+        "jacket", "shoes", "shoe", "sock", "belt", "watch", "ring", "necklace", "face mask",
+    }
 
-    def __init__(self, candidate_names, detector_choice=DETECTOR_YOLO26):
+    def __init__(self, candidate_names, detector_choice=DETECTOR_CLEARVIEW):
         super().__init__(daemon=True, name="analysis-worker")
         self.requests = queue.Queue()
         self.events = queue.Queue()
@@ -390,6 +407,16 @@ class AnalysisWorker(threading.Thread):
         self.requests.put(None)
 
     def _load_detector(self, detector_choice):
+        if detector_choice == DETECTOR_CLEARVIEW:
+            if YOLO is None:
+                raise RuntimeError("Ultralytics YOLO is unavailable.")
+            if not (APP_DIR / CLEARVIEW_MODEL_FILE).exists():
+                raise FileNotFoundError(
+                    f"{CLEARVIEW_MODEL_FILE} is missing. Run build_detector.py to create it."
+                )
+            model = YOLO(str(APP_DIR / CLEARVIEW_MODEL_FILE))
+            return model, f"everyday objects, {len(model.names)} types"
+
         if detector_choice == DETECTOR_YOLO26:
             if YOLO is None:
                 raise RuntimeError("Ultralytics YOLO is unavailable.")
@@ -636,7 +663,8 @@ class AnalysisWorker(threading.Thread):
             if model is None:
                 continue
             try:
-                results = model.predict(frame, verbose=False, conf=MIN_CONFIDENCE)
+                min_confidence = DETECTOR_CONFIDENCE.get(active_detector, MIN_CONFIDENCE)
+                results = model.predict(frame, verbose=False, conf=min_confidence)
                 if not results or results[0].boxes is None or len(results[0].boxes) == 0:
                     self.events.put(("not_found", None))
                     continue
@@ -671,7 +699,7 @@ class AnalysisWorker(threading.Thread):
                         crop_results = model.predict(
                             crop,
                             verbose=False,
-                            conf=MIN_CONFIDENCE * 0.7,
+                            conf=min_confidence * 0.7,
                         )
                         if crop_results and crop_results[0].boxes is not None:
                             crop_detections = self._read_detections(
@@ -969,7 +997,7 @@ class DyslexiaCameraApp:
         self.speech_rate = tk.DoubleVar(value=1.0)
         self.volume = tk.IntVar(value=100)
         self.voice_name = tk.StringVar(value="Default")
-        self.detector_choice = tk.StringVar(value=DETECTOR_YOLO26)
+        self.detector_choice = tk.StringVar(value=DETECTOR_CLEARVIEW)
         self.brightness = tk.IntVar(value=100)
         self.auto_speak = tk.BooleanVar(value=True)
         self.current_sentence = "Point the camera at an object, then choose Identify object."
@@ -1074,7 +1102,13 @@ class DyslexiaCameraApp:
         )
         self.app_menu.add_separator()
         app_menu.add_radiobutton(
-            label="YOLO26 (default)",
+            label="Everyday objects (default)",
+            variable=self.detector_choice,
+            value=DETECTOR_CLEARVIEW,
+            command=self._on_detector_change,
+        )
+        app_menu.add_radiobutton(
+            label="YOLO26 (80 types)",
             variable=self.detector_choice,
             value=DETECTOR_YOLO26,
             command=self._on_detector_change,
@@ -1593,11 +1627,7 @@ class DyslexiaCameraApp:
 
         self.model_error = None
         self.identify_button.configure(state="disabled")
-        self._set_status(
-            "Loading YOLO26…" if requested_detector == DETECTOR_YOLO26
-            else "Loading the YOLO-World backup…",
-            "info",
-        )
+        self._set_status(f"Loading {DETECTOR_NAMES[requested_detector]}…", "info")
         self.analysis.switch_detector(requested_detector)
 
     def _set_status(self, message, kind="info"):
@@ -1810,12 +1840,7 @@ class DyslexiaCameraApp:
             self.identify_button.configure(state="normal")
         elif event == "model_loading":
             self.identify_button.configure(state="disabled")
-            model_name = (
-                "YOLO26"
-                if payload == DETECTOR_YOLO26
-                else "the YOLO-World backup"
-            )
-            self._set_status(f"Loading {model_name}…", "info")
+            self._set_status(f"Loading {DETECTOR_NAMES.get(payload, 'the detector')}…", "info")
         elif event == "ocr_loading":
             self._set_status("Loading object and text recognition models…", "info")
         elif event == "model_error":
@@ -2069,8 +2094,8 @@ class DyslexiaCameraApp:
             self.app_color_choice.set(DEFAULT_APP_COLOR)
         if self.font_family.get() not in self.font_options:
             self.font_family.set("Verdana")
-        if self.detector_choice.get() not in (DETECTOR_YOLO26, DETECTOR_YOLO_WORLD):
-            self.detector_choice.set(DETECTOR_YOLO26)
+        if self.detector_choice.get() not in DETECTOR_NAMES:
+            self.detector_choice.set(DETECTOR_CLEARVIEW)
 
     def close(self):
         save_settings({name: getattr(self, name).get() for name in SAVED_SETTINGS})

@@ -7,7 +7,7 @@ It comes in two forms that share the same detection model and design:
 | | Phone website (`phone-web/`) | Desktop app (`app.py`) |
 |---|---|---|
 | Best for | Everyday use: point your phone at things | A fixed reading station, or offline use |
-| Object detection | YOLO26 running in the browser | YOLO26 (or YOLO-World) running locally |
+| Object detection | Everyday-object detector (YOLOE, 175 objects) in the browser | The same detector locally (YOLO26 and YOLO-World as options) |
 | Description of the closest object | Cloudflare Workers AI | Cloudflare Workers AI (optional) |
 | Label / page text | Workers AI, plus Tesseract.js for whole pages | EasyOCR, locally |
 | Speech | The phone's built-in voices | Windows voices |
@@ -18,7 +18,7 @@ It comes in two forms that share the same detection model and design:
  camera photo
       │
       ▼
- YOLO26 detector ──► every object in view, with a box around each
+ everyday-object detector ──► every object in view, with a box around each
       │
       ├──► "closest" = the largest box that isn't a person
       │         │
@@ -62,7 +62,7 @@ on-device detector and a short built-in description.
    python app.py
    ```
 
-The first start may take longer because YOLO26, the text reader, and their models may need to download model files. The app installs the CLIP dependency from a ZIP, so Git is not required. YOLO26 is the default detector; use the top-left menu to switch to the YOLO-World backup, change the background colour, or adjust camera brightness. Allow camera access when Windows asks. After choosing a photo, select **Identify object** once the AI models are ready.
+The first start may take longer because YOLO26, the text reader, and their models may need to download model files. The app installs the CLIP dependency from a ZIP, so Git is not required. The everyday-object detector is the default; use the top-left menu to switch to YOLO26 or the YOLO-World backup, change the background colour, or adjust camera brightness. Allow camera access when Windows asks. After choosing a photo, select **Identify object** once the AI models are ready.
 
 Reading settings (colour, font, size, spacing, voice, speed, volume) are saved to `settings.json` when you close the app.
 
@@ -83,6 +83,16 @@ The mobile website and its Cloudflare Pages deployment are in `phone-web`. See `
 - Automatic speech toggle, repeat control, and confidence display
 - Editable object descriptions in `object_descriptions.json`
 - Clear status messages if the camera, model, or speech engine is unavailable
+
+## Change which objects it knows
+
+The default detector is YOLOE, an open-vocabulary model: rather than being trained on a fixed set of objects, it looks for whatever is named in a list. That list is `vocabulary.txt` (175 everyday objects, including wallet, keys, pen, glasses, medicine bottle and toothpaste). To add or remove objects, edit the file and rebuild both apps' models:
+
+```powershell
+.venv\Scripts\python.exe build_detector.py
+```
+
+This writes `clearview-detector.pt` (desktop) and `phone-web/public/models/clearview-detector.onnx` plus `labels.json` (phone). Commit them and push to update the phone site. Short, common names work best; very similar names (mug / cup) can be confused with each other.
 
 ## Add or change an explanation
 
@@ -112,7 +122,7 @@ cd phone-web; node --test                    # phone detector and API checks
 ## Notes and limitations
 
 - "Closest" means the largest object in the picture; a camera can't measure distance. A big object further away can win over a small one nearby.
-- YOLO26 is the default detector and uses its pretrained 80 COCO classes, so it cannot name objects outside that list (a pen, a wallet). Choose **YOLO-World backup** from the top-left menu to use the open-vocabulary model and the prompts in `object_descriptions.json`. Both models can miss or misidentify objects; when a hand/person is detected, the app analyzes a padded crop and favors overlapping non-wearable objects over clothing and glasses. Confidence is shown to help users judge results.
+- The everyday-object detector only names things in `vocabulary.txt`, and uses a higher confidence bar (40%) than YOLO26 (30%) because open-vocabulary models make more weak guesses. **YOLO26** (80 fixed object types, very reliable on those) and the **YOLO-World backup** (prompts from `object_descriptions.json`) are in the top-left menu. Both models can miss or misidentify objects; when a hand/person is detected, the app analyzes a padded crop and favors overlapping non-wearable objects over clothing and glasses. Confidence is shown to help users judge results.
 - OCR can provide clues from labels or packaging, but it does not change YOLO's confidence and may misread text. If OCR cannot initialize, object detection continues without it.
 - Camera brightness changes the app's camera preview and object-identification image, not the laptop display.
 - Chinese text is read with an installed Chinese Windows voice when one exists; install one from Windows Settings → Time & language → Speech if Chinese is read incorrectly.
@@ -123,6 +133,7 @@ cd phone-web; node --test                    # phone detector and API checks
 ## Project files
 
 - `app.py` — desktop application, camera, detection, and speech workers
+- `vocabulary.txt` and `build_detector.py` — the objects the detector looks for, and the script that builds it
 - `phone-web/` — mobile website and Cloudflare Pages Function
 - `object_descriptions.json` — editable explanations shown and spoken by the app
 - `tests/` — desktop tests; `phone-web/tests/` — phone tests

@@ -11,3 +11,8 @@ settings.json
 graphify-out/
 node_modules/
 .wrangler/
+
+# Downloaded only to build the detector (build_detector.py)
+yoloe-26n-seg.pt
+mobileclip*.ts
+/*.onnx

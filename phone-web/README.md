@@ -7,7 +7,7 @@ The mobile ClearView website, designed for readers with dyslexia. It shares its 
 - Uses the phone's rear camera or photo picker to capture one image.
 - Provides a separate Text scanner screen from the three-line feature menu, with its own camera capture and photo picker.
 - Scans full-page English and Traditional Chinese text locally in the browser, then lets users edit or select recognized text to copy or read aloud with the current word highlighted when the browser reports speech boundaries.
-- Finds every object in the photo on the phone itself, with the YOLO26 model (`public/models/yolo26n.onnx`) running in the browser through ONNX Runtime Web. The largest object that isn't a person is treated as the closest; the others are listed as "I can also see: …".
+- Finds every object in the photo on the phone itself, with ClearView's everyday-object detector (`public/models/clearview-detector.onnx`, a YOLOE model built from the project's `vocabulary.txt`) running in the browser through ONNX Runtime Web. The largest object that isn't a person is treated as the closest; the others are listed as "I can also see: …".
 - Sends only the closest object's crop to a Pages Function, which asks Cloudflare Workers AI's LLaVA model for a free-form description of it, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label. If that fails, the on-device name is shown instead.
 - Shows the generated item description, recognized label text, and any product identification based on that text, then reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
 - Reading preferences offer six background tints, text size, letter spacing, speech speed and voice; all are remembered on the device.
@@ -53,8 +53,8 @@ This serves the static site and Pages Function locally. For local scans, start W
 - Mostly-Chinese text is read with a Chinese voice automatically when the phone has one and no voice was chosen; mixed text uses the default or chosen voice.
 - Recognition is an AI estimate and can be wrong, especially for small, obscured, or unusual objects.
 - Cloudflare Workers AI usage may be subject to account limits or charges.
-- The on-device detector knows 80 everyday object types; anything else can only be named by the cloud description of the closest object.
-- The model file (about 9.5 MB) downloads on first use, then the browser caches it.
+- The on-device detector knows the 175 objects in `vocabulary.txt`; anything else can only be named by the cloud description of the closest object. See the main README to add objects.
+- The model file (about 11 MB) downloads on first use, then the browser caches it.
 
 ## Tests
 

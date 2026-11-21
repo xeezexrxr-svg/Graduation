@@ -8,8 +8,8 @@ labels.csv has one row per photo:
     desk1.jpg,cup,laptop;book
     kitchen2.jpg,bottle,
 
-Names must be the detector's object names (see evaluation/README.md).
-This runs the same YOLO26 model and the same "closest = largest object"
+Names must be ones in vocabulary.txt (see evaluation/README.md).
+This runs the same everyday-object detector and the same "closest = largest object"
 logic as both apps, so the scores describe both. Results are written to
 evaluation/results.csv.
 """
@@ -24,18 +24,23 @@ sys.path.insert(0, str(PROJECT))
 import cv2  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 
-from app import MIN_CONFIDENCE, YOLO26_MODEL_FILE, AnalysisWorker  # noqa: E402
+from app import (  # noqa: E402
+    CLEARVIEW_MODEL_FILE,
+    DETECTOR_CLEARVIEW,
+    DETECTOR_CONFIDENCE,
+    AnalysisWorker,
+)
 
 
 def parse_names(cell):
     return {name.strip().lower() for name in (cell or "").split(";") if name.strip()}
 
 
-def predict(model, image_path):
+def predict(model, image_path, min_confidence):
     frame = cv2.imread(str(image_path))
     if frame is None:
         raise ValueError(f"could not open {image_path.name}")
-    results = model.predict(frame, verbose=False, conf=MIN_CONFIDENCE)
+    results = model.predict(frame, verbose=False, conf=min_confidence)
     detections = AnalysisWorker._read_detections(results[0]) if results else []
     chosen = AnalysisWorker._select_detection(detections)
     closest = chosen["label"].strip().lower().replace("_", " ") if chosen else ""
@@ -46,7 +51,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("photos", type=Path, help="folder of photos")
     parser.add_argument("labels", type=Path, help="labels.csv")
-    parser.add_argument("--model", default=str(PROJECT / YOLO26_MODEL_FILE))
+    parser.add_argument("--model", default=str(PROJECT / CLEARVIEW_MODEL_FILE))
+    parser.add_argument(
+        "--conf", type=float, default=DETECTOR_CONFIDENCE[DETECTOR_CLEARVIEW],
+        help="minimum confidence (use 0.3 when testing yolo26n.pt)",
+    )
     parser.add_argument("--out", type=Path, default=PROJECT / "evaluation" / "results.csv")
     args = parser.parse_args()
 
@@ -62,7 +71,7 @@ def main():
         expected_closest = row["closest"].strip().lower()
         expected_all = parse_names(row.get("also_visible")) | {expected_closest}
         try:
-            predicted_closest, predicted_all = predict(model, photo)
+            predicted_closest, predicted_all = predict(model, photo, args.conf)
         except ValueError as error:
             print(f"Skipped: {error}")
             continue

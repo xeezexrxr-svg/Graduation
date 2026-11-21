@@ -23,21 +23,10 @@ Copy `labels-template.csv` to `labels.csv` and add one row per photo. Write what
 | `closest` | the object nearest the camera |
 | `also_visible` | every other object, separated by `;` (leave out people) |
 
-Only these object names can be detected, so use them exactly (lower case):
-
-> backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite,
-> baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass,
-> cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot,
-> hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv,
-> laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink,
-> refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush,
-> bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light,
-> fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow,
-> elephant, bear, zebra, giraffe
-
-If an object in the photo isn't on this list (a pen, a wallet), leave it out and note it
-in your report as a known limit: the detector can't name it, though the cloud
-description sometimes can.
+Only the names in `vocabulary.txt` (in the project folder) can be detected, so use them
+exactly, in lower case. If an object in the photo isn't on the list, leave it out and note
+it in your report as a known limit: the detector can't name it, though the cloud
+description sometimes can. (Or add it to the list and rebuild; see the main README.)
 
 ### Run it
 ```powershell
@@ -51,8 +40,9 @@ It prints three numbers and writes `evaluation/results.csv` with every photo's r
 - **Recall**: of all the objects really there, how many it found.
 - **Precision**: of the objects it listed, how many were really there (low = it invents things).
 
-The test uses the same model and logic as both apps (the phone runs the same YOLO26
-model in the browser), so the numbers describe both. It does not score the cloud
+The test uses the same detector and logic as both apps (the phone runs the same model
+in the browser), so the numbers describe both. To compare with the old YOLO26 model, add
+`--model yolo26n.pt --conf 0.3`; that comparison makes a good section in a report. It does not score the cloud
 description sentence; judge a sample of those by hand if you want to report on them.
 
 ## 2. Testing with dyslexic readers

@@ -1,0 +1,195 @@
+# Everyday objects ClearView looks for (one per line).
+# Used to build the YOLOE detector for both apps: after editing, run
+#   .venv\Scripts\python.exe build_detector.py
+# Keep names short and common; "person" is detected but never listed as an object.
+person
+
+# Kitchen and drink
+bottle
+water bottle
+cup
+mug
+glass
+wine glass
+plate
+bowl
+fork
+knife
+spoon
+chopsticks
+pot
+frying pan
+kettle
+teapot
+cutting board
+can
+jar
+lunch box
+thermos
+
+# Food
+apple
+banana
+orange
+lemon
+grapes
+strawberry
+watermelon
+pineapple
+mango
+pear
+peach
+tomato
+potato
+onion
+carrot
+broccoli
+lettuce
+cucumber
+bell pepper
+corn
+avocado
+bread
+rice
+noodles
+pizza
+sandwich
+egg
+cheese
+milk carton
+yogurt
+cereal box
+cookie
+cake
+doughnut
+hamburger
+hot dog
+french fries
+chocolate bar
+ice cream
+candy
+snack bag
+
+# Personal items
+wallet
+keys
+glasses
+sunglasses
+watch
+cell phone
+earphones
+headphones
+hat
+cap
+shoe
+sock
+shirt
+jacket
+umbrella
+backpack
+handbag
+belt
+ring
+necklace
+face mask
+comb
+hairbrush
+mirror
+toothbrush
+toothpaste
+soap
+shampoo bottle
+towel
+tissue box
+toilet paper
+lipstick
+perfume
+
+# Health
+medicine bottle
+pill bottle
+pills
+bandage
+thermometer
+
+# Study and office
+book
+notebook
+pen
+pencil
+eraser
+ruler
+scissors
+stapler
+tape
+glue stick
+calculator
+paper
+envelope
+folder
+sticky notes
+marker
+pencil case
+
+# Electronics
+laptop
+computer mouse
+keyboard
+monitor
+tv
+remote control
+tablet
+charger
+power bank
+cable
+light bulb
+lamp
+fan
+speaker
+camera
+game controller
+clock
+battery
+
+# Around the home
+chair
+table
+desk
+sofa
+bed
+pillow
+blanket
+potted plant
+vase
+trash can
+basket
+box
+bag
+plastic bag
+bucket
+broom
+hanger
+refrigerator
+microwave
+oven
+toaster
+rice cooker
+sink
+toilet
+faucet
+
+# Out and about
+bicycle
+car
+bus
+motorcycle
+cat
+dog
+bird
+teddy bear
+ball
+toy
+coin
+banknote
+credit card
+ticket

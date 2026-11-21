@@ -83,6 +83,20 @@ class TestPalettes:
         assert app._mix("#123456", "#abcdef", 0) == "#123456"
 
 
+class TestEverydayObjectDetector:
+    def test_desktop_model_matches_vocabulary(self):
+        # If this fails, vocabulary.txt was edited without running build_detector.py.
+        from ultralytics import YOLO
+
+        from build_detector import read_vocabulary
+
+        model = YOLO(str(app.APP_DIR / app.CLEARVIEW_MODEL_FILE))
+        assert list(model.names.values()) == read_vocabulary()
+
+    def test_every_detector_has_a_name_and_threshold(self):
+        assert set(app.DETECTOR_NAMES) == set(app.DETECTOR_CONFIDENCE)
+
+
 class TestSettingsFile:
     def test_round_trip(self, tmp_path):
         path = tmp_path / "settings.json"
