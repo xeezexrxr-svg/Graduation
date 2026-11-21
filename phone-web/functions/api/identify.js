@@ -1,6 +1,16 @@
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const OBJECT_MODEL = "@cf/llava-hf/llava-1.5-7b-hf";
-const OCR_MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+// Cloudflare retired LLaVA (@cf/llava-hf/llava-1.5-7b-hf) on 2026-11-20, so one
+// vision model now both describes the object and reads its label.
+const VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+const DESCRIBE_QUESTION = "What is the main object in this photo? Answer in one or two short sentences "
+  + "using simple, everyday words, starting with its name (for example: \"A computer mouse. It is "
+  + "used to move the pointer on a computer screen.\"). Be specific when you can (a tea bottle, not "
+  + "just a bottle) and mention useful visible features such as colour or contents. Do not guess "
+  + "details that are not visible.";
+const LABEL_QUESTION = "Read only the visible label text, especially Traditional Chinese characters. "
+  + "Transcribe the characters exactly without translating or guessing. Return JSON only: "
+  + "{\"visible_text\":\"exact text, or empty string if none\",\"product\":\"product name in "
+  + "English if the text identifies it, otherwise empty string\"}.";
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HUMAN_LABELS = new Set(["person", "people", "human", "hand", "arm", "finger"]);
 const OBJECT_LABELS = [
@@ -223,35 +233,31 @@ export async function onRequestPost({ request, env }) {
   }
 
   try {
-    const objectResult = await env.AI.run(OBJECT_MODEL, {
-      image: Array.from(image),
-      prompt: "Describe the main object in one or two short sentences, not just its broad category. Identify the specific kind of item when visible (for example, a drink bottle or tea bottle), and mention useful visible features such as material, color, shape, contents, or purpose. Read any clearly legible label text, including Traditional Chinese, exactly; do not guess text or details that are not visible. Reply with the description only.",
-      max_tokens: 128,
+    const imageUri = imageDataUri(image, contentType);
+    const ask = (question, maxTokens) => env.AI.run(VISION_MODEL, {
+      task: "query",
+      image: imageUri,
+      question,
+      reasoning: false,
+      temperature: 0.1,
+      max_tokens: maxTokens,
     });
-    const objectAnswer = typeof objectResult?.description === "string"
-      ? objectResult.description
+    // Describe and read the label at the same time; a failed label read
+    // doesn't block the description.
+    const [objectResult, textResult] = await Promise.all([
+      ask(DESCRIBE_QUESTION, 128),
+      ask(LABEL_QUESTION, 256).catch((error) => {
+        console.error("Workers AI label reading failed; keeping object result", error);
+        return null;
+      }),
+    ]);
+    const objectAnswer = typeof objectResult?.answer === "string"
+      ? objectResult.answer
       : "";
     const label = normalizeLabel(objectAnswer);
-
-    let textResult = null;
-    let textAnswer = "";
-    if (image.length <= MAX_IMAGE_BYTES) {
-      try {
-        textResult = await env.AI.run(OCR_MODEL, {
-          task: "query",
-          image: imageDataUri(image, contentType),
-          question: "Read only the visible label text, especially Traditional Chinese characters. Transcribe the characters exactly without translating or guessing. Return JSON only: {\"visible_text\":\"exact text, or empty string if none\",\"product\":\"product name in English if the text identifies it, otherwise empty string\"}.",
-          reasoning: false,
-          temperature: 0.1,
-          max_tokens: 256,
-        });
-        textAnswer = typeof textResult?.answer === "string"
-          ? textResult.answer
-          : "";
-      } catch (error) {
-        console.error("Workers AI label reading failed; keeping object result", error);
-      }
-    }
+    const textAnswer = typeof textResult?.answer === "string"
+      ? textResult.answer
+      : "";
 
     const ocrResult = parseRecognition(textAnswer);
     const recognizedText = ocrResult.recognizedText;
