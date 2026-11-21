@@ -1,8 +1,50 @@
 # ClearView
 
-ClearView is a desktop prototype for an accessibility-focused camera assistant. It can identify common objects, explain their everyday purpose in short language, and read the explanation aloud.
+ClearView is a camera assistant for people with dyslexia or other reading difficulties. Point a camera at everyday things and it names the closest object, lists everything else in view, reads any label text, and reads the result aloud with word-by-word highlighting, on reading colours and spacing each person chooses.
 
-## Run it on Windows
+It comes in two forms that share the same detection model and design:
+
+| | Phone website (`phone-web/`) | Desktop app (`app.py`) |
+|---|---|---|
+| Best for | Everyday use: point your phone at things | A fixed reading station, or offline use |
+| Object detection | YOLO26 running in the browser | YOLO26 (or YOLO-World) running locally |
+| Description of the closest object | Cloudflare Workers AI | Cloudflare Workers AI (optional) |
+| Label / page text | Workers AI, plus Tesseract.js for whole pages | EasyOCR, locally |
+| Speech | The phone's built-in voices | Windows voices |
+
+## How it works
+
+```
+ camera photo
+      │
+      ▼
+ YOLO26 detector ──► every object in view, with a box around each
+      │
+      ├──► "closest" = the largest box that isn't a person
+      │         │
+      │         ▼  (only this crop leaves the device)
+      │    /api/identify on Cloudflare
+      │      ├─ LLaVA: a short description of the object
+      │      └─ Moondream: label text (English, 繁體中文)
+      │
+      ▼
+ "This is a cup. <description> I can also see: laptop, book."
+      │
+      ▼
+ read aloud, highlighting each word, on the reader's chosen tint and spacing
+```
+
+If the cloud step is unavailable, both apps still give the object's name from the
+on-device detector and a short built-in description.
+
+**Design choices for dyslexic readers**
+- Six background tints (cream, yellow, blue, mint, peach, dark), because the most comfortable colour varies from person to person; text is dark grey on soft colours, never black on white.
+- Wider letter, word and line spacing, left-aligned text, no all-caps; the Atkinson Hyperlegible typeface on the phone, Verdana by default on the desktop.
+- The sentence being read is shaded and the current word highlighted, so readers can follow along.
+- Every reading setting is remembered between visits.
+- Mostly-Chinese text is read with a Chinese voice automatically when one is installed.
+
+## Run the desktop app (Windows)
 
 1. Install Python 3.10 or newer.
 2. Open PowerShell in this folder and create a virtual environment:
@@ -17,29 +59,27 @@ ClearView is a desktop prototype for an accessibility-focused camera assistant. 
 3. Start the app:
 
    ```powershell
-   python Appp.py
+   python app.py
    ```
 
-The first start may take longer because the object detector, text reader, and their models may need to download model files. The app installs the CLIP dependency from a ZIP, so Git is not required. The detector uses object names in `object_descriptions.json` as candidate labels. Allow camera access when Windows asks. After choosing a photo, select **Identify object** once the AI models are ready.
+The first start may take longer because YOLO26, the text reader, and their models may need to download model files. The app installs the CLIP dependency from a ZIP, so Git is not required. YOLO26 is the default detector; use the top-left menu to switch to the YOLO-World backup, change the background colour, or adjust camera brightness. Allow camera access when Windows asks. After choosing a photo, select **Identify object** once the AI models are ready.
+
+Reading settings (colour, font, size, spacing, voice, speed, volume) are saved to `settings.json` when you close the app.
 
 ## Phone website
 
-A separate mobile website and Cloudflare Pages deployment are in `phone-web`. It uses the phone browser's camera and speech synthesis, with object recognition through a Cloudflare Pages Function and Workers AI. See `phone-web/README.md` for deployment and binding setup. The Windows desktop app remains unchanged.
+The mobile website and its Cloudflare Pages deployment are in `phone-web`. See `phone-web/README.md` for deployment and binding setup.
 
-## What is included
+## Desktop features
 
 - Live camera preview and photo selection
-- Three-line app menu with a full-page text scanner and camera-image brightness control
-- Full-page English and Traditional Chinese OCR from the webcam or a chosen image; scanned text can be edited, selected, copied, and read aloud
-- Open-vocabulary object identification using names from `object_descriptions.json`
-- Rechecks a detected hand/person crop to find small held objects, then favors an overlapping non-wearable object over clothing or glasses
+- Three-line app menu with background colour, YOLO26 as the default detector, a YOLO-World backup option, and camera-image brightness control
+- Names the closest object (the largest one in view, preferring something held in a hand) and lists every other object it can see
 - Uses EasyOCR to read visible English and Traditional Chinese text in the detected object's crop; recognized text is added to the result and read aloud with the object explanation
 - Sends the detected object crop to Cloudflare Workers AI for a more specific, free-form description and label-based product identification
 - Object identification in a background worker, so model loading and analysis do not freeze the interface
 - Plain-language explanations and repeatable Windows SAPI text-to-speech playback with sentence and current-word highlighting that follows speech
-- Voice dropdown for choosing an installed Windows speech voice
-- A two-card reading workspace with object explanations and read-aloud controls
-- Font, text size, letter spacing, line spacing, speech speed, and volume controls beside the explanation
+- Text settings (font, bold, size, letter spacing, line spacing) and voice settings (voice, speed, volume) side by side under the result
 - Automatic speech toggle, repeat control, and confidence display
 - Editable object descriptions in `object_descriptions.json`
 - Clear status messages if the camera, model, or speech engine is unavailable
@@ -55,21 +95,36 @@ Open `object_descriptions.json` and add a lowercase object name and a short expl
 }
 ```
 
-Keep the file as valid JSON: use double quotes around names and text, and put a comma between entries. The object names become candidate prompts for the open-vocabulary detector, so restart the app after editing the file. Names can include spaces, such as `"cell phone"` or `"dining table"`. The detector may still miss or misidentify an object; adding a name does not train the model, and results should be tested with the actual objects and camera.
+Keep the file as valid JSON: use double quotes around names and text, and put a comma between entries. The names provide descriptions for recognized classes and become candidate prompts when the YOLO-World backup is selected. YOLO26 uses its pretrained COCO classes; adding a name does not train it. Names can include spaces, such as `"cell phone"` or `"dining table"`. Either detector may miss or misidentify an object, so test results with the actual objects and camera.
+
+## Tests
+
+```powershell
+.venv\Scripts\python.exe -m pip install pytest
+.venv\Scripts\python.exe -m pytest           # desktop logic
+cd phone-web; node --test                    # phone detector and API checks
+```
+
+## Evaluation
+
+`evaluation/` holds a script that scores detection accuracy on your own labelled photos, and a user-testing kit for sessions with dyslexic readers. See `evaluation/README.md`.
 
 ## Notes and limitations
 
-- The YOLO-World model can use the configured names as open-vocabulary detection prompts, but it will not identify every object reliably. When a hand/person is detected, the app also analyzes a padded crop to look for small held objects. If object boxes overlap that person/hand, selection favors non-wearable objects over clothing and glasses; this heuristic cannot correct a wrong label or guarantee that the intended object is detected. Confidence is shown to help users judge results.
+- "Closest" means the largest object in the picture; a camera can't measure distance. A big object further away can win over a small one nearby.
+- YOLO26 is the default detector and uses its pretrained 80 COCO classes, so it cannot name objects outside that list (a pen, a wallet). Choose **YOLO-World backup** from the top-left menu to use the open-vocabulary model and the prompts in `object_descriptions.json`. Both models can miss or misidentify objects; when a hand/person is detected, the app analyzes a padded crop and favors overlapping non-wearable objects over clothing and glasses. Confidence is shown to help users judge results.
 - OCR can provide clues from labels or packaging, but it does not change YOLO's confidence and may misread text. If OCR cannot initialize, object detection continues without it.
-- The Text scanner uses EasyOCR locally for English and Traditional Chinese. Keep the page steady, in focus, and evenly lit; its confidence score is not a guarantee of accuracy, so proofread important text. Brightness changes the app's camera image and scan input, not the laptop display.
-- Read-aloud pronunciation depends on the selected Windows voice supporting the recognized language. Install/select a Traditional Chinese voice in Windows for Chinese speech.
+- Camera brightness changes the app's camera preview and object-identification image, not the laptop display.
+- Chinese text is read with an installed Chinese Windows voice when one exists; install one from Windows Settings → Time & language → Speech if Chinese is read incorrectly.
 - This is a student prototype, not a safety device. Do not rely on it to identify medicine, hazards, or other safety-critical items.
-- YOLO detection and EasyOCR run locally. The detected object crop is sent to Cloudflare Workers AI for the optional detailed description and product identification; use the phone app or desktop app only with photos you are comfortable sending to the cloud. Pretrained model files may be downloaded by Ultralytics and EasyOCR the first time they run.
-- The default reading font is Arial, with Verdana and Trebuchet MS as alternatives. OpenDyslexic is offered when installed on the computer. The best font and reading settings vary between people, so users can choose their preferences.
+- YOLO detection and EasyOCR run locally. The detected object crop is sent to Cloudflare Workers AI for the optional detailed description and product identification; use the app only with photos you are comfortable sending to the cloud. Pretrained model files may be downloaded by Ultralytics and EasyOCR the first time they run.
+- The default reading font is Verdana, with Arial and Trebuchet MS as alternatives. OpenDyslexic and Atkinson Hyperlegible are offered when installed on the computer. The best font and reading settings vary between people, so users can choose their preferences.
 
 ## Project files
 
-- `Appp.py` — application, camera, detection, and speech workers
-- `phone-web/` — separate mobile website and Cloudflare Pages Function
+- `app.py` — desktop application, camera, detection, and speech workers
+- `phone-web/` — mobile website and Cloudflare Pages Function
 - `object_descriptions.json` — editable explanations shown and spoken by the app
+- `tests/` — desktop tests; `phone-web/tests/` — phone tests
+- `evaluation/` — accuracy script and user-testing kit
 - `requirements.txt` — Python dependencies

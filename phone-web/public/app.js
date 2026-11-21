@@ -595,17 +595,53 @@ function updateSpeechBoundary(charIndex) {
   word.element.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
+// Chinese text read with an English voice is unintelligible, so when the
+// reader hasn't picked a voice, mostly-Chinese text gets a Chinese one.
+function isMostlyChinese(text) {
+  const chinese = (text.match(/[㐀-鿿豈-﫿]/g) || []).length;
+  const latin = (text.match(/[a-z]/gi) || []).length;
+  return chinese > 0 && chinese * 3 >= latin;
+}
+
+function findChineseVoice() {
+  return speechVoices.find((voice) => /^zh[-_](TW|Hant)/i.test(voice.lang))
+    || speechVoices.find((voice) => /^zh[-_]HK/i.test(voice.lang))
+    || speechVoices.find((voice) => /^zh/i.test(voice.lang))
+    || null;
+}
+
+// Reading preferences are remembered on this device. Storage can be blocked
+// (private browsing), so every access is optional.
+function loadSetting(name) {
+  try {
+    return localStorage.getItem(`clearview-${name}`);
+  } catch {
+    return null;
+  }
+}
+
+function saveSetting(name, value) {
+  try {
+    localStorage.setItem(`clearview-${name}`, value);
+  } catch {
+    // Not saved; the setting still applies for this visit.
+  }
+}
+
 function refreshVoices() {
   if (!("speechSynthesis" in window)) return;
   speechVoices = window.speechSynthesis.getVoices();
-  const previous = voiceChoice.value;
+  const previousName = voiceChoice.value === ""
+    ? loadSetting("voice")
+    : speechVoices[Number(voiceChoice.value)]?.name;
   voiceChoice.replaceChildren(new Option("Default voice", ""));
   for (const [index, voice] of speechVoices.entries()) {
     const option = new Option(voice.name, String(index));
     voiceChoice.add(option);
   }
-  if (speechVoices.some((voice, index) => String(index) === previous)) {
-    voiceChoice.value = previous;
+  const previousIndex = speechVoices.findIndex((voice) => voice.name === previousName);
+  if (previousIndex >= 0) {
+    voiceChoice.value = String(previousIndex);
   }
 }
 
@@ -639,7 +675,13 @@ function startSpeechUtterance(state, offset, requestId) {
   activeSpeechState = state;
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = Number(speechRateInput.value);
-  if (state.voice) utterance.voice = state.voice;
+  if (state.voice) {
+    utterance.voice = state.voice;
+  } else if (isMostlyChinese(text)) {
+    utterance.lang = "zh-TW";
+    const voice = findChineseVoice();
+    if (voice) utterance.voice = voice;
+  }
   utterance.onboundary = (event) => {
     if (requestId !== speechRequestId || activeSpeechMode !== state.mode) return;
     const charIndex = offset + Math.max(0, event.charIndex || 0);
@@ -926,7 +968,10 @@ async function scanImage() {
     try {
       const response = await fetch("/api/identify", {
         method: "POST",
-        headers: { "Content-Type": uploadImage.type || "image/jpeg" },
+        headers: {
+          "Content-Type": uploadImage.type || "image/jpeg",
+          "X-ClearView-Client": "phone",
+        },
         body: uploadImage,
       });
       payload = await response.json().catch(() => null);
@@ -1089,6 +1134,19 @@ for (const option of document.querySelectorAll('input[name="tint"]')) {
 }
 applyTint(document.documentElement.dataset.tint || "cream");
 
+for (const [name, input] of [
+  ["fontSize", fontSizeInput],
+  ["letterSpacing", letterSpacingInput],
+  ["speechRate", speechRateInput],
+]) {
+  const saved = loadSetting(name);
+  if (saved !== null) input.value = saved;
+  input.addEventListener("change", () => saveSetting(name, input.value));
+}
+voiceChoice.addEventListener("change", () => {
+  saveSetting("voice", voiceChoice.value === "" ? "" : speechVoices[Number(voiceChoice.value)]?.name || "");
+});
+
 fontSizeInput.addEventListener("input", updateFontSizePreference);
 letterSpacingInput.addEventListener("input", updateLetterSpacingPreference);
 speechRateInput.addEventListener("input", updateReadingSpeechRate);
@@ -1102,4 +1160,5 @@ if ("speechSynthesis" in window) {
 }
 updateFontSizePreference();
 updateLetterSpacingPreference();
+updateReadingSpeechRate();
 updateTextScanControls();

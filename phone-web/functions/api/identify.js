@@ -175,7 +175,25 @@ function parseRecognition(answer) {
   };
 }
 
+// Every call spends Workers AI quota, so only ClearView may use this endpoint.
+// Browsers always send Origin on POST: it must be this site, which blocks
+// other websites from borrowing the API. Non-browser callers (the desktop
+// app) must identify themselves. This stops casual misuse, not a determined
+// attacker; set a usage alert in the Cloudflare dashboard as the real backstop.
+export const CLIENT_HEADER = "X-ClearView-Client";
+
+export function isAllowedCaller(request) {
+  const origin = request.headers.get("Origin");
+  if (origin) {
+    return origin === new URL(request.url).origin;
+  }
+  return Boolean(request.headers.get(CLIENT_HEADER));
+}
+
 export async function onRequestPost({ request, env }) {
+  if (!isAllowedCaller(request)) {
+    return jsonResponse({ error: "This endpoint is only for the ClearView app." }, 403);
+  }
   if (!env.AI || typeof env.AI.run !== "function") {
     return jsonResponse({
       error: "Object recognition is not configured yet. Add the Workers AI binding named AI to this Pages project.",

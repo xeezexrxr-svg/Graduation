@@ -1,0 +1,13 @@
+# Python environment and caches (recreate with: py -m venv .venv && pip install -r requirements.txt)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Desktop app preferences, saved per computer
+settings.json
+
+# Local tool output
+graphify-out/
+node_modules/
+.wrangler/

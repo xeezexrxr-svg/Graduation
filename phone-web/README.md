@@ -1,15 +1,17 @@
 # ClearView Phone
 
-A separate, mobile-friendly ClearView website. The existing Windows desktop app is unchanged.
+The mobile ClearView website, designed for readers with dyslexia. It shares its detection model and design with the desktop app in the project root.
 
 ## What it does
 
 - Uses the phone's rear camera or photo picker to capture one image.
 - Provides a separate Text scanner screen from the three-line feature menu, with its own camera capture and photo picker.
 - Scans full-page English and Traditional Chinese text locally in the browser, then lets users edit or select recognized text to copy or read aloud with the current word highlighted when the browser reports speech boundaries.
-- Sends the resized image to a Pages Function, which asks Cloudflare Workers AI's LLaVA model for a free-form description of the specific visible item, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label.
+- Finds every object in the photo on the phone itself, with the YOLO26 model (`public/models/yolo26n.onnx`) running in the browser through ONNX Runtime Web. The largest object that isn't a person is treated as the closest; the others are listed as "I can also see: …".
+- Sends only the closest object's crop to a Pages Function, which asks Cloudflare Workers AI's LLaVA model for a free-form description of it, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label. If that fails, the on-device name is shown instead.
 - Shows the generated item description, recognized label text, and any product identification based on that text, then reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
-- Does not save photos. Images are sent to Cloudflare for inference.
+- Reading preferences offer six background tints, text size, letter spacing, speech speed and voice; all are remembered on the device.
+- Does not save photos. Only the closest object's crop is sent to Cloudflare for a description.
 
 The website needs HTTPS for camera access and clipboard access, so use the deployed Cloudflare Pages URL on your phone. The photo picker remains available when camera access is denied or unavailable.
 
@@ -23,9 +25,16 @@ The separate text scanner uses Tesseract.js in the browser to recognize English 
 4. The Workers AI binding is configured as `ai.binding: "AI"` in `wrangler.jsonc`. Commit and push that configuration so Cloudflare deploys it with the Pages project.
 5. Open the deployed `*.pages.dev` address on your phone and allow camera access. The phone and computer should be using the same public HTTPS site.
 
-The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses Cloudflare Workers AI's LLaVA model for object identification and Moondream 3.1 for English/Traditional Chinese label reading. OCR failures do not block object identification. Product identification is inferred from the recognized text and can still be wrong. The phone site uses hosted vision models rather than the desktop app's YOLO-World and EasyOCR pipeline. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
+The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses Cloudflare Workers AI's LLaVA model for object identification and Moondream 3.1 for English/Traditional Chinese label reading. OCR failures do not block object identification. Product identification is inferred from the recognized text and can still be wrong. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
 
-For cost protection, configure a Cloudflare rate-limiting rule for `POST /api/identify` in the Cloudflare dashboard before sharing the public URL. The endpoint also limits image uploads to 4 MB and accepts only JPEG, PNG, and WebP.
+### Cost protection
+
+Every call to `/api/identify` uses Workers AI quota, so the endpoint only answers ClearView itself: browser requests must come from this site, and other callers (the desktop app) must send an `X-ClearView-Client` header. That stops other websites and casual scripts, but a determined person could still copy the header. Cloudflare's Rate Limiting binding isn't available to Pages Functions, so as the real backstop:
+
+1. In the Cloudflare dashboard, go to **Manage account → Notifications** and add a usage or billing alert for Workers AI.
+2. If you add a custom domain to the site, also add a **Security → WAF → Rate limiting rule** for `POST /api/identify` (for example 20 requests per minute per IP).
+
+The endpoint also limits image uploads to 4 MB and accepts only JPEG, PNG, and WebP.
 
 ## Local preview
 
@@ -41,7 +50,12 @@ This serves the static site and Pages Function locally. For local scans, start W
 
 - Browser camera and speech features vary by phone and browser.
 - Text recognition works best with a sharp, upright, evenly lit page; proofread OCR results. Selecting text works in the editable recognized-text area, and the browser reads the selected passage or all text. Text size and letter spacing apply to both the scanner text and object description; speech speed can be adjusted during playback, which resumes from the last word reported by the browser.
-- Speech pronunciation depends on the selected browser voice; choose one that supports Traditional Chinese to hear Chinese text read naturally.
+- Mostly-Chinese text is read with a Chinese voice automatically when the phone has one and no voice was chosen; mixed text uses the default or chosen voice.
 - Recognition is an AI estimate and can be wrong, especially for small, obscured, or unusual objects.
 - Cloudflare Workers AI usage may be subject to account limits or charges.
-- This site does not provide the desktop app's local YOLO detector, camera controls, or Windows voices.
+- The on-device detector knows 80 everyday object types; anything else can only be named by the cloud description of the closest object.
+- The model file (about 9.5 MB) downloads on first use, then the browser caches it.
+
+## Tests
+
+From this folder, run `node --test` (Node.js 20 or newer).
