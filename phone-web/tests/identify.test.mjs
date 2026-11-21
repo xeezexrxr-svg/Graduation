@@ -2,7 +2,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CLIENT_HEADER, isAllowedCaller } from "../functions/api/identify.js";
+import { CLIENT_HEADER, isAllowedCaller, readAiResult } from "../functions/api/identify.js";
+
+test("AI results are read whether they come as data, a Response, or a stream", async () => {
+  const plain = { answer: "A computer mouse.", finish_reason: "stop" };
+  assert.equal((await readAiResult(plain)).answer, "A computer mouse.");
+  assert.equal((await readAiResult(new Response(JSON.stringify(plain)))).answer, "A computer mouse.");
+  const events = 'data: {"answer":"A computer"}\n\ndata: {"answer":" mouse."}\n\ndata: [DONE]\n\n';
+  assert.equal((await readAiResult(new Response(events).body)).answer, "A computer mouse.");
+});
 
 const SITE = "https://graduation-6j1.pages.dev";
 

@@ -126,6 +126,43 @@ function normalizeLabel(answer) {
   return label;
 }
 
+// Workers AI usually returns plain data, but some models hand back a Response or
+// a stream (server-sent events). Normalise all three to an object with `answer`.
+export async function readAiResult(result) {
+  if (result && typeof result.json === "function" && typeof result.text === "function") {
+    return parseAiText(await result.text(), "response");
+  }
+  if (result && typeof result.getReader === "function") {
+    return parseAiText(await new Response(result).text(), "stream");
+  }
+  return result;
+}
+
+export function parseAiText(text, kind) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Server-sent events: "data: {...}" lines, each with a piece of the answer.
+    let answer = "";
+    for (const line of text.split(/\r?\n/)) {
+      const data = line.replace(/^data:\s*/, "").trim();
+      if (!line.startsWith("data:") || !data || data === "[DONE]") continue;
+      try {
+        const piece = JSON.parse(data);
+        answer += piece.answer ?? piece.response ?? piece.text ?? piece.caption ?? "";
+      } catch {
+        // Ignore lines that aren't JSON.
+      }
+    }
+    return { answer, receivedAs: kind };
+  }
+}
+
+function describeResultType(value) {
+  if (value === null || value === undefined) return String(value);
+  return `${value.constructor?.name || typeof value} with fields [${Object.keys(value).join(", ")}]`;
+}
+
 function imageDataUri(image, contentType) {
   let binary = "";
   const chunkSize = 0x8000;
@@ -234,19 +271,25 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const imageUri = imageDataUri(image, contentType);
-    const ask = (question, maxTokens) => env.AI.run(VISION_MODEL, {
+    const rawTypes = {};
+    const ask = async (name, question, maxTokens) => {
+      const raw = await env.AI.run(VISION_MODEL, {
       task: "query",
       image: imageUri,
       question,
       reasoning: false,
+      stream: false,
       temperature: 0.1,
       max_tokens: maxTokens,
-    });
+      });
+      rawTypes[name] = describeResultType(raw);
+      return readAiResult(raw);
+    };
     // Describe and read the label at the same time; a failed label read
     // doesn't block the description.
     const [objectResult, textResult] = await Promise.all([
-      ask(DESCRIBE_QUESTION, 128),
-      ask(LABEL_QUESTION, 256).catch((error) => {
+      ask("describe", DESCRIBE_QUESTION, 128),
+      ask("label", LABEL_QUESTION, 256).catch((error) => {
         console.error("Workers AI label reading failed; keeping object result", error);
         return null;
       }),
@@ -274,6 +317,7 @@ export async function onRequestPost({ request, env }) {
         ? undefined
         : JSON.stringify(objectResult)?.slice(0, 240) || "The object model returned no text.",
       finishReason: objectAnswer ? undefined : objectResult?.finish_reason,
+      resultType: objectAnswer ? undefined : rawTypes.describe,
       outputTokens: objectAnswer ? undefined : objectResult?.metrics?.output_tokens,
     });
   } catch (error) {
