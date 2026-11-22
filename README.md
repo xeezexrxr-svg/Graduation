@@ -20,12 +20,13 @@ It comes in two forms that share the same detection model and design:
       ▼
  everyday-object detector ──► every object in view, with a box around each
       │
-      ├──► "closest" = the largest box that isn't a person
+      ├──► "closest" = the largest box that isn't a person or furniture
       │         │
-      │         ▼  (only this crop leaves the device)
+      │         ▼  (this crop leaves the device; the whole photo if
+      │            nothing was found or the box is under 10% of it)
       │    /api/identify on Cloudflare
-      │      ├─ LLaVA: a short description of the object
-      │      └─ Moondream: label text (English, 繁體中文)
+      │      └─ Moondream 3.1: a short description of the object
+      │         and its label text (English, 繁體中文)
       │
       ▼
  "This is a cup. <description> I can also see: laptop, book."
@@ -134,7 +135,7 @@ cd phone-web; node --test                    # phone detector and API checks
 - Camera brightness changes the app's camera preview and object-identification image, not the laptop display.
 - Chinese text is read with an installed Chinese Windows voice when one exists; install one from Windows Settings → Time & language → Speech if Chinese is read incorrectly.
 - This is a student prototype, not a safety device. Do not rely on it to identify medicine, hazards, or other safety-critical items.
-- YOLO detection and EasyOCR run locally. The detected object crop is sent to Cloudflare Workers AI for the optional detailed description and product identification; use the app only with photos you are comfortable sending to the cloud. Pretrained model files may be downloaded by Ultralytics and EasyOCR the first time they run.
+- YOLO detection and EasyOCR run locally. The detected object crop (or the whole photo when the detected box is under 10% of it) is sent to Cloudflare Workers AI for the optional detailed description and product identification; use the app only with photos you are comfortable sending to the cloud. Pretrained model files may be downloaded by Ultralytics and EasyOCR the first time they run.
 - The default reading font is Verdana, with Arial and Trebuchet MS as alternatives. OpenDyslexic and Atkinson Hyperlegible are offered when installed on the computer. The best font and reading settings vary between people, so users can choose their preferences.
 
 ## Project files

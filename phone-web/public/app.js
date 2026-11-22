@@ -636,7 +636,17 @@ function renderDescription(label, explanation, recognizedText = "", product = ""
 
   const title = document.createElement("h3");
   title.className = "object-title";
-  title.textContent = unsure ? `${label}?` : label;
+  title.tabIndex = -1; // so focus can move here and screen readers announce the result
+  title.textContent = label;
+  if (unsure) {
+    const question = document.createElement("span");
+    question.setAttribute("aria-hidden", "true");
+    question.textContent = "?";
+    const maybe = document.createElement("span");
+    maybe.className = "visually-hidden";
+    maybe.textContent = ", maybe";
+    title.append(question, maybe);
+  }
   const paragraph = document.createElement("p");
   paragraph.className = "object-description";
   wordElements = renderReadableText(paragraph, currentDescription);
@@ -983,11 +993,10 @@ async function scanTextImage() {
         "warning",
       );
     } else {
-      const confidence = Number.isFinite(data.confidence)
-        ? ` Average recognition confidence: ${Math.round(data.confidence)}%.`
-        : "";
       setTextScanStatus(
-        `Text recognized on this device.${confidence} Proofread the result; OCR can make mistakes.`,
+        data.confidence < 55
+          ? "Text read on this phone. Many words may be wrong, so check them."
+          : "Text read on this phone. Some words may be wrong.",
         data.confidence < 55 ? "warning" : "success",
       );
     }
@@ -1067,16 +1076,30 @@ function readScannerText(selectedOnly) {
   setTextScanStatus(selectedOnly ? "Reading selected text…" : "Reading all recognized text…", "success");
 }
 
+// Long enough for a slow phone connection; after this, give up instead of
+// leaving the user waiting with no answer.
+const CLOUD_TIMEOUT_MS = 20000;
+
 // Sends the photo (or the closest object's crop) to the ClearView cloud.
 async function askCloud(image) {
-  const response = await fetch("/api/identify", {
-    method: "POST",
-    headers: {
-      "Content-Type": image.type || "image/jpeg",
-      "X-ClearView-Client": "phone",
-    },
-    body: image,
-  });
+  if (!navigator.onLine) throw new Error("You're offline. Connect to the internet and try again.");
+  let response;
+  try {
+    response = await fetch("/api/identify", {
+      method: "POST",
+      headers: {
+        "Content-Type": image.type || "image/jpeg",
+        "X-ClearView-Client": "phone",
+      },
+      body: image,
+      signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
+    });
+  } catch (error) {
+    console.error("Cloud request failed", error);
+    throw new Error(error.name === "TimeoutError"
+      ? "The internet is too slow right now. Please try again."
+      : "Couldn't reach the internet. Please try again.");
+  }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(payload?.error || "Could not identify that photo. Please try again.");
@@ -1085,14 +1108,9 @@ async function askCloud(image) {
 }
 
 function noObjectMessage(payload) {
-  const modelAnswer = typeof payload?.answer === "string" && payload.answer.trim()
-    ? ` The AI replied: “${payload.answer.trim()}”`
-    : ` The AI returned no caption${Array.isArray(payload?.modelFields) && payload.modelFields.length
-      ? ` (response fields: ${payload.modelFields.join(", ")})`
-      : ""}${payload?.finishReason ? ` (finish: ${payload.finishReason})` : ""}${payload?.responseSummary
-      ? ` (response: ${payload.responseSummary})`
-      : ""}.`;
-  return `I could not identify a clear everyday object.${modelAnswer}`;
+  // The model's raw reply helps debugging but means nothing to users.
+  console.warn("No object named by the cloud", payload);
+  return "I couldn't tell what this is. Move closer, use more light, and try again.";
 }
 
 const trimmed = (value, limit) => (typeof value === "string" ? value.trim().slice(0, limit) : "");
@@ -1123,22 +1141,17 @@ function buildResult(payload, detected) {
   };
 }
 
-function resultStatus(result, payload, describedOnline) {
+function resultStatus(result, describedOnline) {
   if (result.unsure) {
     return ["Not sure about this one. Try another angle, move closer, or use more light.", "warning"];
   }
   if (!describedOnline) {
-    return ["Named on your phone. The detailed description needs an internet connection, so try again later.", "warning"];
+    return ["Named on your phone only. The full description didn't load.", "warning"];
   }
   if (result.recognizedText) {
-    return ["Label text read. Check the text and product identification; AI can make mistakes.", "success"];
+    return ["Found it, and read its label. Some words may be wrong.", "success"];
   }
-  return [
-    payload.textReaderAvailable === false
-      ? "Object identified, but label reading returned no text. Try scanning a closer, sharper photo."
-      : "Object identified, but I couldn't read clear label text. Move closer and keep the label in focus.",
-    "warning",
-  ];
+  return ["Found it. No label text was read.", "warning"];
 }
 
 async function scanImage() {
@@ -1178,7 +1191,9 @@ async function scanImage() {
       behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       block: "nearest",
     });
-    setStatus(...resultStatus(result, payload, describedOnline));
+    setStatus(...resultStatus(result, describedOnline));
+    // Screen readers stay on the scan button unless told; move them to the answer.
+    resultContent.querySelector(".object-title")?.focus({ preventScroll: true });
   } catch (error) {
     setStatus(error.message || "Could not identify that photo. Please try again.", "error");
   } finally {

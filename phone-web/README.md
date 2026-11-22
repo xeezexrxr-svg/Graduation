@@ -8,11 +8,11 @@ The mobile ClearView website, designed for readers with dyslexia. It shares its 
 - Provides a separate Text scanner screen from the three-line feature menu, with its own camera capture and photo picker.
 - Scans full-page English and Traditional Chinese text locally in the browser, then lets users edit or select recognized text to copy or read aloud with the current word highlighted when the browser reports speech boundaries.
 - Finds every object in the photo on the phone itself, with two detectors running in the browser through ONNX Runtime Web: ClearView's everyday-object model (`public/models/clearview-detector.onnx`, YOLOE built from the project's `vocabulary.txt`) and YOLO26 (`public/models/yolo26n.onnx`), which corrects it on the 80 objects YOLO26 knows well. The largest object that isn't a person is treated as the closest; the others are listed as "I can also see: …".
-- Sends only the closest object's crop to a Pages Function, which asks Cloudflare Workers AI's LLaVA model for a free-form description of it, then Moondream 3.1 to read visible label text (including Traditional Chinese) and infer a product from the readable label. If that fails, the on-device name is shown instead.
+- Sends the closest object's crop to a Pages Function, which asks Cloudflare Workers AI's Moondream 3.1 model for a free-form description of it and to read visible label text (including Traditional Chinese) and infer a product from the readable label. If that fails, the on-device name is shown instead.
 - Shows the generated item description, recognized label text, and any product identification based on that text, then reads the result aloud using the browser's built-in speech synthesis, with sentence and current-word highlighting when the browser reports speech boundaries.
 - **Ruler view** on the Read a page screen: a reading ruler keeps your place one line (or 2–3 lines) at a time and fades the rest of the page. Move it by tapping a line, the Previous/Next line buttons, or the arrow keys. Read all starts from the ruler's line, and the ruler follows the voice while the sentence (highlighter yellow) and word (solid blue) are highlighted.
 - Reading preferences offer six background tints, text size, letter spacing, speech speed, voice, and the reading ruler (off or 1–3 lines; other lines clear, faded or almost hidden); all are remembered on the device.
-- Does not save photos. Only the closest object's crop is sent to Cloudflare for a description.
+- Does not save photos. The closest object's crop is sent to Cloudflare for a description; the whole photo is sent when no object was found or the closest box is under 10% of the photo (usually a sign the detector missed the real object).
 
 The website needs HTTPS for camera access and clipboard access, so use the deployed Cloudflare Pages URL on your phone. The photo picker remains available when camera access is denied or unavailable.
 
@@ -26,7 +26,7 @@ The separate text scanner uses Tesseract.js in the browser to recognize English 
 4. The Workers AI binding is configured as `ai.binding: "AI"` in `wrangler.jsonc`. Commit and push that configuration so Cloudflare deploys it with the Pages project.
 5. Open the deployed `*.pages.dev` address on your phone and allow camera access. The phone and computer should be using the same public HTTPS site.
 
-The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses Cloudflare Workers AI's LLaVA model for object identification and Moondream 3.1 for English/Traditional Chinese label reading. OCR failures do not block object identification. Product identification is inferred from the recognized text and can still be wrong. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
+The Pages Function is `functions/api/identify.js`; its `/api/identify` endpoint uses Cloudflare Workers AI's Moondream 3.1 model for object identification and English/Traditional Chinese label reading (LLaVA was retired on 2026-11-20). OCR failures do not block object identification. Product identification is inferred from the recognized text and can still be wrong. The Wrangler configuration file is the source of truth for this Pages project's settings, including the Workers AI binding.
 
 ### Cost protection
 
