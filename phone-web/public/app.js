@@ -16,6 +16,7 @@ const scanButton = document.querySelector("#scanButton");
 const cameraVideo = document.querySelector("#cameraVideo");
 const photoPreview = document.querySelector("#photoPreview");
 const cameraPlaceholder = document.querySelector("#cameraPlaceholder");
+const cameraTip = document.querySelector("#cameraTip");
 const captureCanvas = document.querySelector("#captureCanvas");
 const scanStatus = document.querySelector("#scanStatus");
 const resultContent = document.querySelector("#resultContent");
@@ -176,6 +177,7 @@ function stopCamera() {
   }
   cameraVideo.srcObject = null;
   cameraVideo.hidden = true;
+  cameraTip.hidden = true;
   cameraButton.textContent = "Start camera";
   if (!selectedImage) {
     cameraPlaceholder.hidden = false;
@@ -212,6 +214,7 @@ async function startCamera() {
     });
     cameraVideo.srcObject = cameraStream;
     cameraVideo.hidden = false;
+    cameraTip.hidden = false;
     cameraButton.textContent = "Capture photo";
     await cameraVideo.play();
     setStatus("Camera ready. Center one item, then capture it.", "success");
@@ -262,10 +265,27 @@ async function capturePhoto() {
     const image = await captureVideoJpeg(cameraVideo, MAX_IMAGE_SIDE, JPEG_QUALITY);
     showSelectedImage(image);
     stopCamera();
-    setStatus("Photo captured. Choose Identify object to scan it.", "success");
   } catch (error) {
     setStatus(error.message, "error");
+    return;
   }
+  await checkThenScan();
+}
+
+const PHOTO_PROBLEMS = {
+  blurry: "This photo looks blurry. Hold still and take it again.",
+  dark: "This photo is too dark. Add light and take it again.",
+};
+
+// A new photo is identified straight away, unless it's clearly unusable; then
+// Identify object stays available to try it anyway.
+async function checkThenScan() {
+  const problem = await checkPhoto(selectedImage).catch(() => null);
+  if (problem) {
+    setStatus(PHOTO_PROBLEMS[problem], "warning");
+    return;
+  }
+  await scanImage();
 }
 
 function loadImage(blob) {
@@ -303,12 +323,13 @@ async function preparePhoto(file) {
     context.drawImage(image, 0, 0, captureCanvas.width, captureCanvas.height);
     showSelectedImage(await canvasToJpeg(captureCanvas));
     stopCamera();
-    setStatus("Photo ready. Choose Identify object to scan it.", "success");
   } catch (error) {
     setStatus(error.message, "error");
+    return;
   } finally {
     photoInput.value = "";
   }
+  await checkThenScan();
 }
 
 function releaseTextSelectedImage() {

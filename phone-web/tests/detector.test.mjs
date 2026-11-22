@@ -10,10 +10,10 @@ const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(
   `${readFileSync(new URL("../public/detector.js", import.meta.url), "utf8")}
-   globalThis.exported = { decodeDetections, summarizeDetections, mergeDetections, worthCropping };`,
+   globalThis.exported = { decodeDetections, summarizeDetections, mergeDetections, worthCropping, photoProblem };`,
   sandbox,
 );
-const { decodeDetections, summarizeDetections, mergeDetections, worthCropping } = sandbox.exported;
+const { decodeDetections, summarizeDetections, mergeDetections, worthCropping, photoProblem } = sandbox.exported;
 
 const LABELS = ["person", "cup", "laptop", "book", "bottle", "wallet"];
 const EXTRA_ROWS = 2; // the real model adds mask rows after the scores; they must be ignored
@@ -146,4 +146,32 @@ test("the cloud sees the whole photo when the chosen box is tiny", () => {
   // The open-wallet photo: only a corner of the keyboard was found.
   assert.equal(worthCropping({ label: "keyboard", box: [0, 0, 250, 250] }, 1000, 1000), false);
   assert.equal(worthCropping({ label: "cup", box: [0, 0, 400, 300] }, 1000, 1000), true);
+});
+
+// Grey photos as RGBA pixels: value(x, y) gives each pixel's brightness.
+function greyPhoto(width, height, value) {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      pixels[index] = pixels[index + 1] = pixels[index + 2] = value(x, y);
+      pixels[index + 3] = 255;
+    }
+  }
+  return pixels;
+}
+
+test("a sharp, bright photo has no problem", () => {
+  const checkerboard = greyPhoto(40, 40, (x, y) => ((x >> 2) + (y >> 2)) % 2 ? 230 : 40);
+  assert.equal(photoProblem(checkerboard, 40, 40), null);
+});
+
+test("a smooth, featureless photo is called blurry", () => {
+  const smooth = greyPhoto(40, 40, (x) => 100 + x);
+  assert.equal(photoProblem(smooth, 40, 40), "blurry");
+});
+
+test("a near-black photo is called too dark, even if sharp", () => {
+  const darkCheckerboard = greyPhoto(40, 40, (x, y) => ((x >> 2) + (y >> 2)) % 2 ? 20 : 0);
+  assert.equal(photoProblem(darkCheckerboard, 40, 40), "dark");
 });

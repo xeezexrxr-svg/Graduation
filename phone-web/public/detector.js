@@ -69,6 +69,61 @@ function loadDetector() {
   return detectorModels;
 }
 
+// Limits from the 2026-11-22 test of 24 phone photos, measured in Chrome exactly
+// as below: the one unusable blurry photo scored 21 for sharpness, every usable
+// one 97 or more, even plain smooth objects. Dark photos of dark objects (an
+// eraser on a black mat, brightness 25) were still named correctly, so only
+// near-black photos, like a covered lens, count as too dark.
+const BLURRY_BELOW = 50;
+const TOO_DARK_BELOW = 15;
+const PHOTO_CHECK_SIDE = 320;
+
+// pixels: RGBA data of a small copy of the photo. Returns "dark", "blurry" or null.
+// Sharpness is how much the brightness changes between neighbouring pixels
+// (the variance of the Laplacian); blur smooths those changes away.
+function photoProblem(pixels, width, height) {
+  const grey = new Float32Array(width * height);
+  let total = 0;
+  for (let index = 0; index < grey.length; index += 1) {
+    const value = 0.299 * pixels[index * 4] + 0.587 * pixels[index * 4 + 1] + 0.114 * pixels[index * 4 + 2];
+    grey[index] = value;
+    total += value;
+  }
+  if (total / grey.length < TOO_DARK_BELOW) return "dark";
+
+  let sum = 0;
+  let sumOfSquares = 0;
+  let count = 0;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * width + x;
+      const edge = grey[index - 1] + grey[index + 1] + grey[index - width] + grey[index + width] - 4 * grey[index];
+      sum += edge;
+      sumOfSquares += edge * edge;
+      count += 1;
+    }
+  }
+  const sharpness = count ? sumOfSquares / count - (sum / count) ** 2 : 0;
+  return sharpness < BLURRY_BELOW ? "blurry" : null;
+}
+
+async function checkPhoto(blob) {
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const scale = PHOTO_CHECK_SIDE / Math.max(bitmap.width, bitmap.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(3, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(3, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    // The default, rougher shrinking makes blur look sharp (21 became 34).
+    context.imageSmoothingQuality = "high";
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return photoProblem(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+  } finally {
+    bitmap.close();
+  }
+}
+
 function boxArea(box) {
   return Math.max(0, box[2] - box[0]) * Math.max(0, box[3] - box[1]);
 }

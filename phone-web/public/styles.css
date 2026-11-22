@@ -353,6 +353,23 @@ h1 {
   font-size: 16px;
 }
 
+.camera-tip {
+  position: absolute;
+  z-index: 2;
+  bottom: 14px;
+  left: 50%;
+  max-width: calc(100% - 28px);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(20, 20, 20, 0.72);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
 /* Buttons */
 
 .camera-actions,
