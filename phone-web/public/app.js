@@ -59,6 +59,15 @@ let textPreviewWords = [];
 let activeTextPreviewWord = null;
 let speechVoices = [];
 let textOcrWorkerPromise = null;
+let textOcrWorkerLanguage = null;
+// Text-reader language files for each choice. English is always included because
+// Chinese pages often contain English words and numbers. Reading a page with the
+// wrong kind of Chinese costs about 20 points of accuracy (evaluation, 2026-11-22).
+const OCR_LANGUAGES = {
+  eng: { codes: ["eng"], name: "English" },
+  chi_tra: { codes: ["eng", "chi_tra"], name: "Traditional Chinese" },
+  chi_sim: { codes: ["eng", "chi_sim"], name: "Simplified Chinese" },
+};
 let textScanInProgress = false;
 let activeSpeechMode = null;
 let activeSpeechState = null;
@@ -930,15 +939,27 @@ function updateOcrProgress(message) {
   setTextScanStatus(`${message.status}${percent}…`);
 }
 
-async function getTextOcrWorker() {
+function selectedOcrLanguage() {
+  const value = document.querySelector('input[name="ocrLanguage"]:checked')?.value;
+  return OCR_LANGUAGES[value] ? value : "chi_tra";
+}
+
+async function getTextOcrWorker(language = selectedOcrLanguage()) {
   if (!window.Tesseract?.createWorker) {
     throw new Error(
       "The on-device text reader could not load. Check your internet connection and reload the page.",
     );
   }
+  if (textOcrWorkerPromise && textOcrWorkerLanguage !== language) {
+    // Another language was chosen: free the old reader's memory before loading the new one.
+    const oldWorker = textOcrWorkerPromise;
+    textOcrWorkerPromise = null;
+    oldWorker.then((worker) => worker.terminate()).catch(() => {});
+  }
   if (!textOcrWorkerPromise) {
+    textOcrWorkerLanguage = language;
     textOcrWorkerPromise = window.Tesseract.createWorker(
-      ["eng", "chi_tra"],
+      OCR_LANGUAGES[language].codes,
       1,
       {
         workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/worker.min.js",
@@ -1044,8 +1065,9 @@ async function scanTextImage() {
   try {
     stopReading();
     if (rulerView) setRulerView(false);
-    setTextScanStatus("Loading English and Traditional Chinese text models…");
-    const worker = await getTextOcrWorker();
+    const language = selectedOcrLanguage();
+    setTextScanStatus(`Getting the ${OCR_LANGUAGES[language].name} reader ready…`);
+    const worker = await getTextOcrWorker(language);
     setTextScanStatus("Enhancing the image and recognizing text…");
     const ocrImage = await prepareOcrImage(textSelectedImage);
     const { data } = await worker.recognize(ocrImage);
@@ -1351,6 +1373,12 @@ for (const option of document.querySelectorAll('input[name="tint"]')) {
   });
 }
 applyTint(document.documentElement.dataset.tint || "cream");
+
+const savedOcrLanguage = loadSetting("ocrLanguage");
+for (const option of document.querySelectorAll('input[name="ocrLanguage"]')) {
+  if (OCR_LANGUAGES[savedOcrLanguage]) option.checked = option.value === savedOcrLanguage;
+  option.addEventListener("change", () => saveSetting("ocrLanguage", option.value));
+}
 
 for (const [name, input] of [
   ["fontSize", fontSizeInput],

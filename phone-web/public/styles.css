@@ -799,6 +799,16 @@ select {
   margin-top: 18px;
 }
 
+/* The text scanner's language choice reuses the tint buttons, on the page's own colours. */
+.language-picker {
+  margin-bottom: 14px;
+}
+
+.language-options .tint-option span {
+  background: var(--paper);
+  color: var(--ink);
+}
+
 /* Wider screens: viewfinder and result side by side. */
 
 @media (min-width: 880px) {
@@ -860,4 +870,9 @@ select {
     transition-duration: 0.01ms !important;
     animation: none !important;
   }
+}
+
+/* Three language buttons stay in one row on wide screens too. */
+.tint-options.language-options {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }

@@ -105,10 +105,27 @@
       <section id="textScannerScreen" class="app-screen" aria-labelledby="text-scanner-title" hidden>
         <section class="intro">
           <h1 id="text-scanner-title">Read a page</h1>
-          <p>Photograph printed English or 繁體中文 text, then listen to it, copy it, or pick out just the part you need.</p>
+          <p>Photograph printed English or Chinese text, then listen to it, copy it, or pick out just the part you need.</p>
         </section>
 
         <section class="text-scanner" aria-label="Scan and read text">
+          <fieldset class="tint-picker language-picker">
+            <legend>Text language</legend>
+            <div class="tint-options language-options">
+              <label class="tint-option">
+                <input type="radio" name="ocrLanguage" value="eng">
+                <span>English</span>
+              </label>
+              <label class="tint-option">
+                <input type="radio" name="ocrLanguage" value="chi_tra" checked>
+                <span lang="zh-Hant">繁體中文</span>
+              </label>
+              <label class="tint-option">
+                <input type="radio" name="ocrLanguage" value="chi_sim">
+                <span lang="zh-Hans">简体中文</span>
+              </label>
+            </div>
+          </fieldset>
           <div class="camera-view text-camera-view" id="textCameraView">
             <video id="textCameraVideo" autoplay playsinline muted hidden></video>
             <img id="textPhotoPreview" alt="Photo selected for text scanning" hidden>
