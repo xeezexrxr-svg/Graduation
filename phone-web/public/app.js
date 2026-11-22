@@ -28,11 +28,9 @@ const textCameraPlaceholder = document.querySelector("#textCameraPlaceholder");
 const textPhotoInput = document.querySelector("#textPhotoInput");
 const scanTextButton = document.querySelector("#scanTextButton");
 const textPhotoButton = document.querySelector("#textPhotoButton");
-const copySelectedTextButton = document.querySelector("#copySelectedTextButton");
-const copyAllTextButton = document.querySelector("#copyAllTextButton");
-const readSelectedTextButton = document.querySelector("#readSelectedTextButton");
-const readAllTextButton = document.querySelector("#readAllTextButton");
-const stopTextButton = document.querySelector("#stopTextButton");
+const textScanActions = document.querySelector("#textScanActions");
+const readTextButton = document.querySelector("#readTextButton");
+const copyTextButton = document.querySelector("#copyTextButton");
 const recognizedText = document.querySelector("#recognizedText");
 const textReadingPreview = document.querySelector("#textReadingPreview");
 const textScanStatus = document.querySelector("#textScanStatus");
@@ -97,13 +95,22 @@ function updateTextScanControls() {
   textCameraButton.disabled = textScanInProgress;
   textPhotoButton.disabled = textScanInProgress;
   const hasText = Boolean(recognizedText.value.trim());
-  const hasSelection = recognizedText.selectionStart !== recognizedText.selectionEnd;
   const isReadingText = activeSpeechMode === "text";
-  copySelectedTextButton.disabled = !hasSelection;
-  copyAllTextButton.disabled = !hasText;
-  readSelectedTextButton.disabled = !hasSelection || isReadingText || rulerView || !("speechSynthesis" in window);
-  readAllTextButton.disabled = !hasText || isReadingText || !("speechSynthesis" in window);
-  rulerViewButton.disabled = !hasText && !rulerView;
+  // The buttons only appear once there is text to act on.
+  textScanActions.hidden = !hasText && !rulerView;
+  readTextButton.disabled = !("speechSynthesis" in window);
+  if (isReadingText) readTextButton.textContent = "Stop";
+  else if (rulerView) readTextButton.textContent = "Read from this line";
+  else readTextButton.textContent = hasWordsSelected() ? "Read selected words" : "Read all aloud";
+  copyTextButton.textContent = hasWordsSelected() ? "Copy selected" : "Copy all";
+}
+
+// While reading, the box's selection is just the highlighted word, and in
+// ruler view the box is hidden, so neither counts as the user's selection.
+function hasWordsSelected() {
+  return activeSpeechMode !== "text"
+    && !rulerView
+    && recognizedText.selectionStart !== recognizedText.selectionEnd;
 }
 
 function closeFeatureMenu() {
@@ -788,7 +795,8 @@ function reportSpeechBoundary(state, charIndex, charLength) {
 }
 
 function endTextReading() {
-  stopTextButton.disabled = true;
+  // Drop the last highlighted word, so the button doesn't switch to "Read selected words".
+  recognizedText.setSelectionRange(recognizedText.selectionEnd, recognizedText.selectionEnd);
   if (rulerView) clearTextHighlights();
   else clearTextReadingPreview();
   updateTextScanControls();
@@ -902,6 +910,9 @@ function stopReading() {
     activeWord.sentenceElement.classList.remove("reading-sentence-active");
     activeWord = null;
   }
+  // Cleared first so the scanner's Read button stops saying "Stop".
+  activeSpeechMode = null;
+  activeSpeechState = null;
   if (stoppedMode === "text") {
     endTextReading();
     setTextScanStatus("Reading stopped.", "info");
@@ -909,8 +920,6 @@ function stopReading() {
     readButton.disabled = false;
     stopButton.disabled = true;
   }
-  activeSpeechMode = null;
-  activeSpeechState = null;
 }
 
 function updateOcrProgress(message) {
@@ -1070,9 +1079,6 @@ function readScannerText(selectedOnly) {
   if (!rulerView) renderTextReadingPreview(recognizedText.value);
   startSpeechUtterance(speechState, 0, requestId);
   updateTextScanControls();
-  readSelectedTextButton.disabled = true;
-  readAllTextButton.disabled = true;
-  stopTextButton.disabled = false;
   setTextScanStatus(selectedOnly ? "Reading selected text…" : "Reading all recognized text…", "success");
 }
 
@@ -1225,11 +1231,11 @@ textCameraButton.addEventListener("click", () => {
 textPhotoButton.addEventListener("click", () => textPhotoInput.click());
 textPhotoInput.addEventListener("change", () => prepareTextPhoto(textPhotoInput.files?.[0]));
 scanTextButton.addEventListener("click", scanTextImage);
-copySelectedTextButton.addEventListener("click", () => copyScannerText(true));
-copyAllTextButton.addEventListener("click", () => copyScannerText(false));
-readSelectedTextButton.addEventListener("click", () => readScannerText(true));
-readAllTextButton.addEventListener("click", () => readScannerText(false));
-stopTextButton.addEventListener("click", stopReading);
+copyTextButton.addEventListener("click", () => copyScannerText(hasWordsSelected()));
+readTextButton.addEventListener("click", () => {
+  if (activeSpeechMode === "text") stopReading();
+  else readScannerText(hasWordsSelected());
+});
 recognizedText.addEventListener("input", updateTextScanControls);
 recognizedText.addEventListener("select", updateTextScanControls);
 document.addEventListener("selectionchange", updateTextScanControls);

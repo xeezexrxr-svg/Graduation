@@ -128,28 +128,8 @@
           <p class="text-scanner-help">
             Text is read on your phone. The language files download on first use, then stay saved in your browser.
           </p>
-          <div class="text-scan-actions">
-            <button class="button button-secondary" id="copySelectedTextButton" type="button" disabled>
-              Copy selected
-            </button>
-            <button class="button button-secondary" id="copyAllTextButton" type="button" disabled>
-              Copy all
-            </button>
-            <button class="button button-secondary" id="readSelectedTextButton" type="button" disabled>
-              Read selected
-            </button>
-            <button class="button button-secondary" id="readAllTextButton" type="button" disabled>
-              Read all
-            </button>
-            <button class="button button-secondary" id="stopTextButton" type="button" disabled>
-              Stop reading
-            </button>
-            <button class="button button-secondary" id="rulerViewButton" type="button" disabled aria-pressed="false">
-              Ruler view
-            </button>
-          </div>
           <label class="recognized-text-label" for="recognizedText">
-            Recognized text <span>Select or edit the words you want to hear</span>
+            Recognized text <span>Tip: select some words to read or copy just those.</span>
           </label>
           <textarea
             id="recognizedText"
@@ -172,6 +152,14 @@
           <div class="ruler-controls" id="rulerControls" hidden>
             <button class="button button-secondary" id="rulerPrevButton" type="button">Previous line</button>
             <button class="button button-secondary" id="rulerNextButton" type="button">Next line</button>
+          </div>
+          <!-- One button per job; each acts on the selected words, or all text when nothing is selected. -->
+          <div class="text-scan-actions" id="textScanActions" hidden>
+            <button class="button button-primary" id="readTextButton" type="button">Read all aloud</button>
+            <button class="button button-secondary" id="copyTextButton" type="button">Copy all</button>
+            <button class="button button-secondary" id="rulerViewButton" type="button" aria-pressed="false">
+              Ruler view
+            </button>
           </div>
           <p class="status-message" id="textScanStatus" role="status" aria-live="polite">
             Start the camera or choose a photo to scan text.

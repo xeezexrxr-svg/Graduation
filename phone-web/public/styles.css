@@ -547,17 +547,18 @@ h1 {
 }
 
 .text-scan-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 14px 0 16px;
 }
 
-.text-scan-actions .button {
-  flex: 1 1 calc(50% - 4px);
-  min-height: 50px;
-  padding: 10px 12px;
-  font-size: 17px;
+.text-scan-actions[hidden] {
+  display: none;
+}
+
+.text-scan-actions .button-primary {
+  grid-column: 1 / -1;
 }
 
 .recognized-text-label {
