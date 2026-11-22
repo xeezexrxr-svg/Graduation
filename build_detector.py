@@ -7,6 +7,7 @@ vocabulary.txt into two ready-to-use models:
 - clearview-detector.pt                         desktop app (app.py)
 - phone-web/public/models/clearview-detector.onnx  phone website
 - phone-web/public/models/labels.json            the phone's list of names
+- phone-web/shared/vocabulary.js                 the same list for the cloud
 
 Run after editing vocabulary.txt:
     .venv\\Scripts\\python.exe build_detector.py
@@ -22,6 +23,8 @@ PROJECT = Path(__file__).resolve().parent
 BASE_MODEL = "yoloe-26n-seg.pt"
 DESKTOP_MODEL = PROJECT / "clearview-detector.pt"
 PHONE_MODELS = PROJECT / "phone-web" / "public" / "models"
+# The cloud matches its descriptions against the same names (functions/api/identify.js).
+CLOUD_VOCABULARY = PROJECT / "phone-web" / "shared" / "vocabulary.js"
 
 
 def read_vocabulary(path=PROJECT / "vocabulary.txt"):
@@ -46,7 +49,17 @@ def main():
     PHONE_MODELS.mkdir(parents=True, exist_ok=True)
     shutil.move(exported, PHONE_MODELS / "clearview-detector.onnx")
     (PHONE_MODELS / "labels.json").write_text(json.dumps(names, ensure_ascii=False), encoding="utf-8")
+    write_cloud_vocabulary(names)
     print(f"Phone model: {PHONE_MODELS / 'clearview-detector.onnx'}")
+
+
+def write_cloud_vocabulary(names):
+    # A plain JS module: Cloudflare's build can't import JSON files.
+    CLOUD_VOCABULARY.write_text(
+        "// Made by build_detector.py from vocabulary.txt; don't edit by hand.\n"
+        f"export default {json.dumps(names, ensure_ascii=False)};\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

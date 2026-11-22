@@ -1,4 +1,4 @@
-import VOCABULARY from "../../public/models/labels.json" with { type: "json" };
+import VOCABULARY from "../../shared/vocabulary.js";
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 // Cloudflare retired LLaVA (@cf/llava-hf/llava-1.5-7b-hf) on 2026-11-20, so one
