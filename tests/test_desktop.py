@@ -31,6 +31,25 @@ class TestClosestObject:
         chosen = det.select_closest([hand, held_cup, far_tv])
         assert chosen["label"] == "cup"
 
+    def test_the_desk_under_an_object_is_not_the_answer(self):
+        desk = detection("desk", [0, 0, 640, 480])
+        mug = detection("mug", [200, 100, 350, 300])
+        assert det.select_closest([desk, mug])["label"] == "mug"
+
+    def test_a_table_on_its_own_is_still_named(self):
+        assert det.select_closest([detection("table", [0, 0, 640, 480])])["label"] == "table"
+
+    def test_the_cloud_sees_a_crop_of_a_normal_sized_object(self):
+        mug = detection("mug", [0, 0, 400, 300])
+        assert det.worth_cropping(mug, 1000, 1000)
+
+    def test_the_cloud_sees_the_whole_photo_when_the_box_is_tiny_or_a_person(self):
+        # The open-wallet photo: only a corner of the keyboard was found.
+        keyboard = detection("keyboard", [0, 0, 250, 250])
+        person = detection("person", [0, 0, 1000, 1000])
+        assert not det.worth_cropping(keyboard, 1000, 1000)
+        assert not det.worth_cropping(person, 1000, 1000)
+
     def test_no_detections_means_no_answer(self):
         assert det.select_closest([]) is None
 

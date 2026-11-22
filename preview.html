@@ -21,6 +21,22 @@
       margin: auto;
       padding: 24px;
     }
+    .video-preview {
+      grid-column: 1 / -1;
+      padding: 20px;
+      border: 1px solid #d7deea;
+      border-radius: 14px;
+      background: white;
+    }
+    .video-preview h2 { margin: 0 0 8px; }
+    .video-preview p { margin: 0 0 14px; color: #53627a; }
+    .video-preview video {
+      display: block;
+      width: 100%;
+      max-height: 65vh;
+      border-radius: 10px;
+      background: #0e1322;
+    }
     h1 { margin: 0 0 6px; font-size: 32px; }
     .sub, .status, .confidence, .tip { color: #53627a; }
     .sub { margin: 0 0 18px; }
@@ -146,6 +162,15 @@
 </head>
 <body>
   <main class="app">
+    <section class="video-preview">
+      <h2>ClearView video preview</h2>
+      <p>If the MP4 does not play, use the WebM version supported by current browsers.</p>
+      <video controls preload="metadata">
+        <source src="ClearView_preview.webm" type="video/webm">
+        <source src="ClearView_preview.mp4" type="video/mp4">
+        Your browser cannot play this video. Open ClearView_preview.webm in a current version of Edge or Chrome.
+      </video>
+    </section>
     <section>
       <h1>ClearView</h1>
       <p class="sub">A camera assistant for everyday objects</p>

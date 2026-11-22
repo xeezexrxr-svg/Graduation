@@ -6,10 +6,31 @@ import { CLIENT_HEADER, isAllowedCaller, normalizeLabel, parseRecognition, readA
 
 test("the object's name is taken from the start of the description", () => {
   assert.equal(normalizeLabel("A black computer mouse. It is used to move the pointer."), "mouse");
-  assert.equal(normalizeLabel("The main object is a blue bus parked on a city street."), "blue bus");
+  assert.equal(normalizeLabel("The main object is a blue bus parked on a city street."), "bus");
   assert.equal(normalizeLabel("A stapler with a silver top."), "stapler");
-  assert.equal(normalizeLabel("A ceramic teapot. It is used to make tea."), "ceramic teapot");
+  assert.equal(normalizeLabel("A ceramic teapot. It is used to make tea."), "teapot");
   assert.equal(normalizeLabel("unknown"), null);
+});
+
+// Real Moondream answers from the 2026-11-22 photo test that were named wrongly.
+test("openings like 'This is a' and 'A pair of' are not taken as the name", () => {
+  assert.equal(normalizeLabel("This is a stainless steel refrigerator. It has a silver handle."), "refrigerator");
+  assert.equal(normalizeLabel("This is a dust-free eraser from Faber-Castell."), "eraser");
+  assert.equal(normalizeLabel("A pair of silver-framed eyeglasses. The lenses are clear."), "glasses");
+  assert.equal(normalizeLabel("The main object is a pair of scissors. They are black."), "scissors");
+  assert.equal(normalizeLabel("This is a clear plastic egg carton containing two eggs."), "egg");
+});
+
+test("the object's own name wins over a colour, material, or a later sentence", () => {
+  assert.equal(normalizeLabel("The main object is a frosted glass mug. It has a grid pattern."), "mug");
+  assert.equal(normalizeLabel("A clear plastic water bottle with a light teal lid."), "water bottle");
+  assert.equal(normalizeLabel("The main object is a tablet computer. It has a white stylus resting on top."), "tablet");
+  assert.equal(normalizeLabel("A pink clothes hanger. It is pink and has a hook at the end."), "hanger");
+  assert.equal(normalizeLabel("The orange chair is the main object in the photo."), "chair");
+});
+
+test("objects not on the list keep the model's own words", () => {
+  assert.equal(normalizeLabel("The main object is a ceiling light fixture. It has three bulbs."), "ceiling light fixture");
 });
 
 test("AI results are read whether they come as data, a Response, or a stream", async () => {

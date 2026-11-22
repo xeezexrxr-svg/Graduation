@@ -1,0 +1,23 @@
+photo,expected,detector_said,app_said,correct,cloud_description
+pear1.jpg,pear,orange,bottle,no,"The main object is a yellow tea bottle. It is round, has a slightly bumpy texture, and contains liquid."
+pear2.jpg,pear,orange,bottle,no,A yellow tea bottle. It is round and mostly yellow with small dark spots.
+mouse.jpg,computer mouse,computer mouse,mouse,yes,This is a computer mouse. It is used to move the pointer on a computer screen.
+water-bottle.jpg,water bottle,bottle,bottle,no,The main object is a clear plastic water bottle with a light teal lid and markings indicating drinking times.
+mug.jpg,mug,cup,frosted glass mug,yes,The main object is a frosted glass mug. It has a grid pattern and contains no visible liquid or contents.
+scissors.jpg,scissors,scissors,scissors,yes,The main object is a pair of scissors. They are black with dark gray or black handles and blades.
+wallet-closed.jpg,wallet,suitcase,wallet,yes,The main object is a wallet. It has a dark gray/blueish-gray textured surface with a repeating geometric pattern.
+wallet-open.jpg,wallet,keyboard,wallet,yes,A black wallet or card holder containing several cards. The wallet is open and rests on a dark surface.
+laptop.jpg,laptop,person,laptop,yes,The main object is a laptop. It has a dark gray casing with a stylized logo in black.
+tablet.jpg,tablet,,tablet computer,yes,The main object is a tablet computer. It has a white stylus resting on top.
+eggs.jpg,egg,,,no,A clear plastic egg carton containing two tea bottles. The carton has hexagonal compartments and visible labels with dates and product information.
+fan.jpg,fan,plate,Philips fan,yes,The main object is a Philips fan. It is white with a circular fan head and a white pole.
+light-bulbs.jpg,light bulb,cake,ceiling light fixture,yes,"The main object is a ceiling light fixture. It has three circular light fixtures, each containing an illuminated bulb."
+fridge.jpg,refrigerator,refrigerator,This,no,This is a stainless steel refrigerator. It has a silver handle and a light green sticker on the top right corner.
+glasses1.jpg,glasses,tissue box,pair,no,The main object is a pair of eyeglasses with silver frames and clear lenses resting on a dark textured surface.
+glasses2.jpg,glasses,,glasses,yes,"A pair of silver-framed glasses. The lenses appear clear, and the frame has a simple design."
+eraser.jpg,eraser,remote control,This,no,This is a dust-free eraser from Faber-Castell. It has a white eraser head and is packaged in a dark gray or black plastic sleeve.
+pen.jpg,pen,,pen,yes,A clear pen. It is transparent and has a clip at the top.
+ruler.jpg,ruler,,ruler,yes,A ruler. It is transparent and shows markings from 0 to 15 centimeters.
+hanger.jpg,hanger,bed,pink clothes hanger,yes,A pink clothes hanger. It is pink and has a hook at the end.
+chair.jpg,chair,chair,This,no,"This is a bright orange folding chair. Its frame is orange plastic, and it has a seat and backrest."
+banknote.jpg,banknote,person,100 Chinese banknote,yes,"The main object is a 100 Chinese banknote. It features a portrait of an older man in red ink on a light background, with Chinese characters and smaller text visible."

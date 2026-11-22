@@ -19,3 +19,6 @@ mobileclip*.ts
 
 # COCO benchmark downloads (evaluation/coco_benchmark.py)
 evaluation/coco-cache/
+
+# Shows personal ID and bank cards: kept on this computer only (re-download from Drive to re-run the test)
+evaluation/photos/wallet-open.jpg

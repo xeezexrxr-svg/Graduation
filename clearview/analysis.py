@@ -30,6 +30,7 @@ from .detection import (
     plain_label,
     read_detections,
     select_closest,
+    worth_cropping,
 )
 
 CLOUD_ERRORS = (OSError, TimeoutError, ValueError, json.JSONDecodeError, urllib.error.URLError)
@@ -49,8 +50,12 @@ def crop_around(frame, coordinates, ratio, minimum):
 
 
 def request_cloud_details(frame, detection):
-    """Send the detected object's crop to the ClearView cloud for a description."""
-    crop, _ = crop_around(frame, detection["coordinates"], 0.08, 12)
+    """Send the detected object's crop (or the whole photo) to the ClearView cloud for a description."""
+    height, width = frame.shape[:2]
+    if worth_cropping(detection, width, height):
+        crop, _ = crop_around(frame, detection["coordinates"], 0.08, 12)
+    else:
+        crop = frame
     if crop is None:
         raise ValueError("The detected object crop is empty.")
     crop_height, crop_width = crop.shape[:2]

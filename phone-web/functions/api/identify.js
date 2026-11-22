@@ -1,12 +1,15 @@
+import VOCABULARY from "../../public/models/labels.json" with { type: "json" };
+
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 // Cloudflare retired LLaVA (@cf/llava-hf/llava-1.5-7b-hf) on 2026-11-20, so one
 // vision model now both describes the object and reads its label.
 const VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B";
 const DESCRIBE_QUESTION = "What is the main object in this photo? Answer in one or two short sentences "
   + "using simple, everyday words, starting with its name (for example: \"A computer mouse. It is "
-  + "used to move the pointer on a computer screen.\"). Be specific when you can (a tea bottle, not "
-  + "just a bottle) and mention useful visible features such as colour or contents. Do not guess "
-  + "details that are not visible.";
+  + "used to move the pointer on a computer screen.\"). Name exactly what you see and mention useful "
+  + "visible features such as colour or contents. Do not guess details that are not visible.";
+// No example object besides the mouse: an earlier "a tea bottle, not just a
+// bottle" example made the model call pears, eggs and glasses "tea bottles".
 // Worded so the model has no phrase to echo back as fake "label text" (an earlier
 // prompt mentioning "Traditional Chinese characters" got exactly that phrase back).
 const LABEL_QUESTION = "Is any text printed or written on the object? If yes, copy it exactly in its "
@@ -17,42 +20,20 @@ const LABEL_QUESTION = "Is any text printed or written on the object? If yes, co
 const NOT_LABEL_TEXT = /^(none|no( readable| visible)? text|n\/a|empty|unknown)$|traditional chinese|chinese characters|label text|visible text|exact text|original language/i;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HUMAN_LABELS = new Set(["person", "people", "human", "hand", "arm", "finger"]);
+// Names the description is matched against: the on-device detector's list
+// (built from vocabulary.txt) plus a few everyday synonyms.
 const OBJECT_LABELS = [
-  "cell phone",
-  "mobile phone",
-  "computer mouse",
-  "cellphone",
-  "headphones",
-  "toothbrush",
-  "backpack",
-  "keyboard",
-  "laptop",
-  "mouse",
-  "apple",
-  "banana",
-  "book",
-  "bottle",
-  "cup",
-  "fork",
-  "glasses",
-  "handbag",
-  "phone",
-  "pen",
-  "plate",
-  "remote",
-  "scissors",
-  "shoe",
-  "shoes",
-  "spoon",
-  "stapler",
-  "umbrella",
-  "wallet",
+  ...VOCABULARY.filter((name) => !HUMAN_LABELS.has(name)),
+  "mouse", "phone", "mobile phone", "cellphone", "remote", "shoes", "eyeglasses",
 ];
 const LABEL_ALIASES = new Map([
   ["computer mouse", "mouse"],
   ["mobile phone", "cell phone"],
   ["cellphone", "cell phone"],
+  ["eyeglasses", "glasses"],
 ]);
+// How descriptions open before the name: "This is a", "The main object is a pair of".
+const OPENING = /^(?:(?:the\s+)?main\s+object(?:\s+in\s+(?:this|the)\s+(?:photo|image|picture))?\s+is|this\s+is|it\s+is|it's|here\s+is|there\s+is|i\s+see)\s+/i;
 
 function jsonResponse(payload, status = 200) {
   return Response.json(payload, {
@@ -96,30 +77,39 @@ async function readImage(request) {
   return image;
 }
 
-export function normalizeLabel(answer) {
-  const knownLabel = OBJECT_LABELS.reduce((bestMatch, candidate) => {
-    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = new RegExp(`(^|[^a-z])${escaped}(?=$|[^a-z])`, "i").exec(answer);
-    if (!match) return bestMatch;
-    const index = match.index + match[1].length;
-    return !bestMatch || index < bestMatch.index
-      ? { index, label: candidate }
-      : bestMatch;
-  }, null);
-  if (knownLabel) {
-    return LABEL_ALIASES.get(knownLabel.label) || knownLabel.label;
+// The known name inside a short phrase. In English the noun comes last
+// ("frosted glass mug" is a mug), so the name that ends latest wins, and the
+// longer one breaks a tie ("water bottle" over "bottle").
+function knownNameIn(phrase) {
+  let best = null;
+  for (const name of OBJECT_LABELS) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (const match of phrase.matchAll(new RegExp(`(?<![a-z-])${escaped}(?![a-z-])`, "gi"))) {
+      const end = match.index + name.length;
+      if (!best || end > best.end || (end === best.end && name.length > best.name.length)) {
+        best = { end, name };
+      }
+    }
   }
+  return best && (LABEL_ALIASES.get(best.name) || best.name);
+}
 
-  const label = answer
+export function normalizeLabel(answer) {
+  // "This is a pair of silver-framed eyeglasses. The lenses…" → "silver-framed eyeglasses"
+  const phrase = answer
     .split(/\r?\n/, 1)[0]
     .replace(/^\s*(?:object|item|answer)\s*[:=-]\s*/i, "")
     .replace(/^[\s"'`]+|[\s"'`]+$/g, "")
-    // "The main object (in this photo) is a blue bus parked on a street."
-    .replace(/^(?:the\s+)?main\s+object(?:\s+in\s+(?:this|the)\s+(?:photo|image|picture))?\s+is\s+/i, "")
+    .replace(OPENING, "")
     .replace(/^(?:a|an|the)\s+/i, "")
+    .replace(/^(?:pair|set)\s+of\s+/i, "")
     .replace(/[.!?].*$/, "")
     // Keep the name, not what follows it ("bus parked on a street" → "bus").
-    .replace(/\s+(?:parked|sitting|lying|standing|placed|resting|held|being|that|which|with|on|in|at|of|for|from|next|near|is|are|used)\b.*$/i, "")
+    .replace(/\s+(?:parked|sitting|lying|standing|placed|resting|held|holding|containing|made|being|that|which|with|on|in|at|of|for|from|next|near|is|are|used)\b.*$/i, "");
+  const known = knownNameIn(phrase);
+  if (known) return known;
+
+  const label = phrase
     .replace(/[.,;:]+$/, "")
     .trim()
     .replace(/\s+/g, " ");

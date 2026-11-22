@@ -10,10 +10,10 @@ const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(
   `${readFileSync(new URL("../public/detector.js", import.meta.url), "utf8")}
-   globalThis.exported = { decodeDetections, summarizeDetections, mergeDetections };`,
+   globalThis.exported = { decodeDetections, summarizeDetections, mergeDetections, worthCropping };`,
   sandbox,
 );
-const { decodeDetections, summarizeDetections, mergeDetections } = sandbox.exported;
+const { decodeDetections, summarizeDetections, mergeDetections, worthCropping } = sandbox.exported;
 
 const LABELS = ["person", "cup", "laptop", "book", "bottle", "wallet"];
 const EXTRA_ROWS = 2; // the real model adds mask rows after the scores; they must be ignored
@@ -132,4 +132,18 @@ test("a worn item is still chosen if it's the only object", () => {
     { label: "glasses", confidence: 0.7, box: [160, 40, 240, 70] },
   ]);
   assert.equal(closest.label, "glasses");
+});
+
+test("the desk under an object is never the closest object", () => {
+  const { closest } = summarizeDetections([
+    { label: "desk", confidence: 0.6, box: [0, 0, 640, 480] },
+    { label: "cup", confidence: 0.8, box: [200, 100, 350, 300] },
+  ]);
+  assert.equal(closest.label, "cup");
+});
+
+test("the cloud sees the whole photo when the chosen box is tiny", () => {
+  // The open-wallet photo: only a corner of the keyboard was found.
+  assert.equal(worthCropping({ label: "keyboard", box: [0, 0, 250, 250] }, 1000, 1000), false);
+  assert.equal(worthCropping({ label: "cup", box: [0, 0, 400, 300] }, 1000, 1000), true);
 });

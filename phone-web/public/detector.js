@@ -147,6 +147,10 @@ function mergeDetections(everyday, coco, cocoLabels) {
   return merged.filter((detection) => detection.source === "coco" || !cocoNames.has(detection.label));
 }
 
+// Furniture that objects sit on: biggest box in a close-up, but never the
+// closest object unless nothing else was found.
+const SURFACES = new Set(["desk", "table", "dining table", "bed", "sofa", "couch"]);
+
 // Returns { closest, objects }: the largest non-person box (best guess for the
 // closest object) and every distinct object label, biggest first.
 function isWornByPerson(item, people) {
@@ -164,8 +168,9 @@ function summarizeDetections(detections) {
     .filter((detection) => !DETECTOR_HUMAN_LABELS.has(detection.label))
     .sort((first, second) => boxArea(second.box) - boxArea(first.box));
   const candidates = things.filter((thing) => !isWornByPerson(thing, people));
+  const notSurfaces = candidates.filter((thing) => !SURFACES.has(thing.label));
   return {
-    closest: candidates[0] || things[0] || null,
+    closest: notSurfaces[0] || candidates[0] || things[0] || null,
     objects: [...new Set(things.map((detection) => detection.label))],
   };
 }
@@ -208,10 +213,20 @@ async function detectObjects(blob) {
   }
 }
 
+// A chosen box under a tenth of the photo usually means the detector missed the
+// real object (a keyboard corner instead of the open wallet in the 2026-11-22
+// photo test), so the cloud gets the whole photo instead.
+const SMALL_BOX_SHARE = 0.1;
+
+function worthCropping(detection, width, height) {
+  return boxArea(detection.box) >= SMALL_BOX_SHARE * width * height;
+}
+
 // Crops the photo around one detection (with a little padding) for the cloud describer.
 async function cropDetection(blob, detection) {
   const bitmap = await createImageBitmap(blob);
   try {
+    if (!worthCropping(detection, bitmap.width, bitmap.height)) return blob;
     const [x1, y1, x2, y2] = detection.box;
     const padX = Math.max(12, (x2 - x1) * 0.08);
     const padY = Math.max(12, (y2 - y1) * 0.08);

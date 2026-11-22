@@ -1,0 +1,23 @@
+photo,expected_closest,predicted_closest,closest_correct,missed,extra
+pear1.jpg,pear,bowl,no,pear,
+pear2.jpg,pear,person,no,pear,table
+mouse.jpg,computer mouse,,no,computer mouse,
+water-bottle.jpg,water bottle,bottle,no,monitor;water bottle,desk
+mug.jpg,mug,cup,no,mug,chair;cup;desk;toy
+scissors.jpg,scissors,,no,scissors,
+wallet-closed.jpg,wallet,,no,wallet,
+wallet-open.jpg,wallet,,no,credit card;keyboard;wallet,
+laptop.jpg,laptop,laptop,yes,,
+tablet.jpg,tablet,tv,no,pen;tablet,tv
+eggs.jpg,egg,refrigerator,no,egg,refrigerator
+fan.jpg,fan,clock,no,box;fan,clock;coin;hat;plate;sticky notes
+light-bulbs.jpg,light bulb,toilet,no,lamp;light bulb,cup;toilet
+fridge.jpg,refrigerator,refrigerator,yes,,
+glasses1.jpg,glasses,scissors,no,glasses;headphones,scissors;table;tissue box
+glasses2.jpg,glasses,,no,glasses,
+eraser.jpg,eraser,remote control,no,eraser,remote control;table
+pen.jpg,pen,cat,no,pen,cat;toothbrush
+ruler.jpg,ruler,remote control,no,ruler,remote control
+hanger.jpg,hanger,bed,no,hanger,
+chair.jpg,chair,chair,yes,bed;pillow,
+banknote.jpg,banknote,person,no,banknote,

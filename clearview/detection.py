@@ -13,6 +13,11 @@ WORN_ITEMS = {
     "glasses", "sunglasses", "hat", "cap", "headphones", "earphones", "shirt", "jacket",
     "shoes", "shoe", "sock", "belt", "watch", "ring", "necklace", "face mask",
 }
+# Furniture that objects sit on: in close-up photos its box is the biggest, but
+# it's never what the user is pointing at unless nothing else was found.
+SURFACES = {"desk", "table", "dining table", "bed", "sofa", "couch"}
+# Below this share of the photo, the chosen box is too small to trust (see worth_cropping).
+SMALL_BOX_SHARE = 0.10
 # YOLO26's names, written the way vocabulary.txt writes them.
 COCO_TO_EVERYDAY = {
     "mouse": "computer mouse",
@@ -135,13 +140,14 @@ def _touching(first, second):
 def select_closest(detections):
     """Pick the object the user is most likely pointing at.
 
-    Worn items on people are ignored. If someone is holding something, that wins;
+    Worn items on people and the furniture things sit on are ignored. If someone is holding something, that wins;
     otherwise something worn (such as glasses) never beats an object touching it.
     Among what's left, the largest box is the best proxy for the closest object.
     """
     if not detections:
         return None
     detections = drop_worn_items(detections)
+    detections = [d for d in detections if plain_label(d) not in SURFACES] or detections
     objects = [d for d in detections if not is_person(d)]
     not_worn = [d for d in objects if plain_label(d) not in WORN_ITEMS]
     people = [d for d in detections if is_person(d)]
@@ -157,6 +163,16 @@ def select_closest(detections):
             objects = touching_worn
 
     return max(objects or detections, key=box_area)
+
+
+def worth_cropping(detection, width, height):
+    """Whether the cloud should see just this object instead of the whole photo.
+
+    A chosen box under a tenth of the photo, or a person, usually means the
+    detector missed the real object (a keyboard corner instead of the open
+    wallet in the 2026-11-22 photo test), so the cloud gets the whole photo.
+    """
+    return not is_person(detection) and box_area(detection) >= SMALL_BOX_SHARE * width * height
 
 
 def list_labels(detections):
