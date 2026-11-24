@@ -45,6 +45,16 @@ const rulerPrevButton = document.querySelector("#rulerPrevButton");
 const rulerNextButton = document.querySelector("#rulerNextButton");
 const rulerLinesInput = document.querySelector("#rulerLines");
 const rulerAwayInput = document.querySelector("#rulerAway");
+const cameraView = document.querySelector("#cameraView");
+const textCameraView = document.querySelector("#textCameraView");
+const textCameraTip = document.querySelector("#textCameraTip");
+const autoCaptureInput = document.querySelector("#autoCapture");
+const retryButton = document.querySelector("#retryButton");
+const historyCard = document.querySelector("#historyCard");
+const historyList = document.querySelector("#historyList");
+const lineSpacingInput = document.querySelector("#lineSpacing");
+const readingFontInput = document.querySelector("#readingFont");
+const autoReadInput = document.querySelector("#autoRead");
 
 let cameraStream = null;
 let textCameraStream = null;
@@ -77,6 +87,13 @@ let rulerView = false;
 let rulerLines = [];
 let rulerIndex = 0;
 let rulerParts = null;
+let stopCameraWatch = null;
+let stopTextCameraWatch = null;
+// The last scan of the current photo, so "Not right? Try again" can look again.
+let lastScan = null;
+// Results from this visit, newest first. Kept in memory only, never saved.
+const recentScans = [];
+const RECENT_SCANS_KEPT = 10;
 
 // Short built-in descriptions, shared with the desktop app. Used when the cloud
 // can't describe the object; until the file loads, a general sentence is used.
@@ -166,9 +183,128 @@ function showSelectedImage(blob) {
   cameraVideo.hidden = true;
   cameraPlaceholder.hidden = true;
   scanButton.disabled = false;
+  lastScan = null;
+  retryButton.hidden = true;
+}
+
+// Light, zoom and tap-to-focus, on phones whose camera offers them to websites
+// (mostly Android Chrome; iPhones offer none, so the controls stay hidden there).
+function attachCameraTools(view, video, stream) {
+  const track = stream.getVideoTracks()[0];
+  const offers = track?.getCapabilities?.() || {};
+  const tools = view.querySelector(".camera-tools");
+  const torch = tools.querySelector('[data-tool="torch"]');
+  const zoomControl = tools.querySelector(".camera-zoom");
+  const zoom = zoomControl.querySelector("input");
+  const ring = view.querySelector(".focus-ring");
+  const setting = (constraint) => track.applyConstraints({ advanced: [constraint] });
+
+  torch.hidden = !offers.torch;
+  torch.setAttribute("aria-pressed", "false");
+  torch.textContent = "Light on";
+  torch.onclick = async () => {
+    const on = torch.getAttribute("aria-pressed") !== "true";
+    try {
+      await setting({ torch: on });
+      torch.setAttribute("aria-pressed", String(on));
+      torch.textContent = on ? "Light off" : "Light on";
+    } catch (error) {
+      console.warn("Could not switch the light", error);
+    }
+  };
+
+  zoomControl.hidden = !offers.zoom;
+  if (offers.zoom) {
+    zoom.min = offers.zoom.min;
+    zoom.max = offers.zoom.max;
+    zoom.step = offers.zoom.step || 0.1;
+    zoom.value = track.getSettings().zoom ?? offers.zoom.min;
+    zoom.oninput = () => setting({ zoom: Number(zoom.value) }).catch(() => {});
+  }
+  tools.hidden = torch.hidden && zoomControl.hidden;
+
+  const focusModes = Array.isArray(offers.focusMode) ? offers.focusMode : [];
+  ring.hidden = true;
+  video.onclick = async (event) => {
+    if (!focusModes.length || !video.videoWidth) return;
+    // The video is shown whole ("contain"), so leave out the bars around it.
+    const box = video.getBoundingClientRect();
+    const scale = Math.min(box.width / video.videoWidth, box.height / video.videoHeight);
+    const shownWidth = video.videoWidth * scale;
+    const shownHeight = video.videoHeight * scale;
+    const x = (event.clientX - box.left - (box.width - shownWidth) / 2) / shownWidth;
+    const y = (event.clientY - box.top - (box.height - shownHeight) / 2) / shownHeight;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    try {
+      await setting({
+        pointsOfInterest: [{ x, y }],
+        focusMode: focusModes.includes("single-shot") ? "single-shot" : focusModes[0],
+      });
+      ring.style.left = `${event.clientX - box.left}px`;
+      ring.style.top = `${event.clientY - box.top}px`;
+      ring.hidden = false;
+      setTimeout(() => { ring.hidden = true; }, 900);
+    } catch (error) {
+      console.warn("This camera can't focus on a tapped point", error);
+    }
+  };
+}
+
+function hideCameraTools(view, video) {
+  view.querySelector(".camera-tools").hidden = true;
+  view.querySelector(".focus-ring").hidden = true;
+  video.onclick = null;
+}
+
+// While the camera is on, checks the picture a few times a second with the same
+// blur and dark test as a taken photo, and says what to fix. With onSteady, calls
+// it once the picture has stayed sharp for about two seconds (auto photo).
+const LIVE_CHECK_MS = 400;
+const SHARP_CHECKS_BEFORE_PHOTO = 5;
+const LIVE_TIPS = {
+  dark: "Too dark. Add light.",
+  blurry: "Hold still. Keep it in the frame.",
+};
+
+function watchCamera(video, tip, sharpTip, onSteady = null) {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  let sharpChecks = 0;
+  const timer = setInterval(() => {
+    if (!video.videoWidth || document.hidden) return;
+    const scale = PHOTO_CHECK_SIDE / Math.max(video.videoWidth, video.videoHeight);
+    canvas.width = Math.max(3, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(3, Math.round(video.videoHeight * scale));
+    context.imageSmoothingQuality = "high";
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const problem = photoProblem(pixels, canvas.width, canvas.height);
+    sharpChecks = problem ? 0 : sharpChecks + 1;
+    const message = problem ? LIVE_TIPS[problem] : onSteady ? "Sharp. Hold still, taking the photo…" : sharpTip;
+    if (tip.textContent !== message) tip.textContent = message;
+    if (onSteady && sharpChecks >= SHARP_CHECKS_BEFORE_PHOTO) {
+      clearInterval(timer);
+      onSteady();
+    }
+  }, LIVE_CHECK_MS);
+  return () => clearInterval(timer);
+}
+
+// Also re-run when Auto photo is switched while the camera is on.
+function watchObjectCamera() {
+  stopCameraWatch?.();
+  stopCameraWatch = watchCamera(
+    cameraVideo,
+    cameraTip,
+    "Sharp. Tap Capture photo.",
+    autoCaptureInput.checked ? capturePhoto : null,
+  );
 }
 
 function stopCamera() {
+  stopCameraWatch?.();
+  stopCameraWatch = null;
+  hideCameraTools(cameraView, cameraVideo);
   if (cameraStream) {
     for (const track of cameraStream.getTracks()) {
       track.stop();
@@ -217,7 +353,11 @@ async function startCamera() {
     cameraTip.hidden = false;
     cameraButton.textContent = "Capture photo";
     await cameraVideo.play();
-    setStatus("Camera ready. Center one item, then capture it.", "success");
+    attachCameraTools(cameraView, cameraVideo, cameraStream);
+    watchObjectCamera();
+    setStatus(autoCaptureInput.checked
+      ? "Camera ready. Hold one item still and the photo is taken by itself."
+      : "Camera ready. Center one item, then capture it.", "success");
   } catch (error) {
     stopCamera();
     cameraPlaceholder.hidden = false;
@@ -352,6 +492,10 @@ function showTextSelectedImage(image) {
 
 function stopTextCamera() {
   textCameraRequestId += 1;
+  stopTextCameraWatch?.();
+  stopTextCameraWatch = null;
+  hideCameraTools(textCameraView, textCameraVideo);
+  textCameraTip.hidden = true;
   if (textCameraStream) {
     for (const track of textCameraStream.getTracks()) {
       track.stop();
@@ -398,6 +542,9 @@ async function startTextCamera() {
     textCameraVideo.hidden = false;
     textCameraButton.textContent = "Capture page";
     await textCameraVideo.play();
+    attachCameraTools(textCameraView, textCameraVideo, textCameraStream);
+    textCameraTip.hidden = false;
+    stopTextCameraWatch = watchCamera(textCameraVideo, textCameraTip, "Sharp. Tap Capture page.");
     updateTextScanControls();
     setTextScanStatus("Camera ready. Frame the page, then capture it.", "success");
   } catch (error) {
@@ -475,6 +622,7 @@ function renderReadableText(parent, text) {
     const sentence = sentences.get(key);
     const element = document.createElement("span");
     element.textContent = match[0];
+    element.dataset.word = "";
     const word = {
       start: match.index,
       end: match.index + match[0].length,
@@ -658,19 +806,22 @@ function setRulerView(on) {
   updateTextScanControls();
 }
 
+// Shows the result in blocks: what it is, the label's text, what the label
+// suggests, and what else is in the photo. Read aloud speaks the blocks in order,
+// each with a short lead-in ("The label says:"), and highlights the words.
 // unsure: the name is only a low-confidence guess, so say "might be", not "is".
-function renderDescription(label, explanation, recognizedText = "", product = "", unsure = false) {
+function renderResult(result) {
+  const { label, explanation, recognizedText, product, alsoSeen = [], unsure } = result;
   const article = /^[aeiou]/i.test(label) ? "an" : "a";
-  currentDescription = `This ${unsure ? "might be" : "is"} ${article} ${label}. ${explanation}`;
-  if (product) {
-    currentDescription += ` The label suggests this is ${product}.`;
-  }
-  if (recognizedText) {
-    currentDescription += ` The visible text reads: ${recognizedText}.`;
-  }
+  const blocks = [
+    { body: `This ${unsure ? "might be" : "is"} ${article} ${label}. ${explanation}` },
+    recognizedText && { heading: "Label text", lead: "The label says: ", body: recognizedText },
+    product && { heading: "The label suggests", lead: "The label suggests this is ", body: product },
+    alsoSeen.length && { heading: "Also in the photo", lead: "I can also see: ", body: alsoSeen.join(", ") },
+  ].filter(Boolean);
+
   activeWord = null;
   resultContent.replaceChildren();
-
   const title = document.createElement("h3");
   title.className = "object-title";
   title.tabIndex = -1; // so focus can move here and screen readers announce the result
@@ -684,11 +835,78 @@ function renderDescription(label, explanation, recognizedText = "", product = ""
     maybe.textContent = ", maybe";
     title.append(question, maybe);
   }
-  const paragraph = document.createElement("p");
-  paragraph.className = "object-description";
-  wordElements = renderReadableText(paragraph, currentDescription);
-  resultContent.append(title, paragraph);
+  resultContent.append(title);
+
+  currentDescription = "";
+  wordElements = [];
+  for (const block of blocks) {
+    const section = document.createElement("div");
+    section.className = "result-block";
+    if (block.heading) {
+      const heading = document.createElement("h4");
+      heading.className = "result-block-heading";
+      heading.textContent = block.heading;
+      section.append(heading);
+    }
+    const paragraph = document.createElement("p");
+    paragraph.className = "object-description";
+    if (currentDescription) currentDescription += " ";
+    const offset = currentDescription.length + (block.lead || "").length;
+    for (const word of renderReadableText(paragraph, block.body)) {
+      wordElements.push({ ...word, start: word.start + offset, end: word.end + offset });
+    }
+    // End each block with a full stop, so the voice pauses between them.
+    currentDescription += `${block.lead || ""}${block.body}${/[.!?。！？]$/.test(block.body) ? "" : "."}`;
+    section.append(paragraph);
+    resultContent.append(section);
+  }
   readButton.disabled = !("speechSynthesis" in window);
+}
+
+// Recent scans of this visit: tap one to see and hear it again.
+function rememberScan(result) {
+  recentScans.unshift({ result, time: new Date() });
+  recentScans.length = Math.min(recentScans.length, RECENT_SCANS_KEPT);
+  historyList.replaceChildren(...recentScans.map((scan) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    const name = document.createElement("span");
+    name.textContent = scan.result.label;
+    const time = document.createElement("time");
+    time.dateTime = scan.time.toISOString();
+    time.textContent = scan.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    button.append(name, time);
+    button.addEventListener("click", () => {
+      stopReading();
+      renderResult(scan.result);
+      retryButton.hidden = true;
+      setStatus(`Showing an earlier scan: ${scan.result.label}.`, "info");
+      resultContent.querySelector(".object-title")?.focus();
+    });
+    item.append(button);
+    return item;
+  }));
+  historyCard.hidden = false;
+}
+
+// Says one tapped word, in a voice that speaks its language, and marks it while speaking.
+function speakWord(word) {
+  if (!("speechSynthesis" in window)) return;
+  stopReading();
+  window.speechSynthesis.cancel();
+  const chinese = /\p{Script=Han}/u.test(word.text);
+  const utterance = new SpeechSynthesisUtterance(word.text);
+  utterance.rate = Number(speechRateInput.value);
+  const chosenVoice = voiceChoice.value === "" ? null : speechVoices[Number(voiceChoice.value)];
+  const voice = voiceForRun({ chinese }, chosenVoice);
+  if (voice) utterance.voice = voice;
+  if (chinese) utterance.lang = voice?.lang || "zh-TW";
+  const unmark = () => word.element.classList.remove("tapped-word");
+  word.element.classList.add("tapped-word");
+  utterance.onend = unmark;
+  utterance.onerror = unmark;
+  window.speechSynthesis.speak(utterance);
 }
 
 function updateSpeechBoundary(charIndex) {
@@ -767,7 +985,7 @@ function readAloud() {
   }, 0, requestId);
   readButton.disabled = true;
   stopButton.disabled = false;
-  setStatus("Reading the explanation aloud…", "success");
+  if (scanStatus.dataset.kind !== "warning") setStatus("Reading the result aloud…", "success");
 }
 
 // Splits text (from `from` on) into runs of Chinese and non-Chinese writing, so
@@ -1229,8 +1447,7 @@ function buildResult(payload, detected) {
   if (!label) throw new Error(noObjectMessage(payload));
 
   const description = trimmed(payload.description, 360);
-  const otherObjects = objects.filter((name) => name !== closest?.label && name !== label.toLowerCase());
-  const alsoSeen = otherObjects.length ? ` I can also see: ${otherObjects.join(", ")}.` : "";
+  const alsoSeen = objects.filter((name) => name !== closest?.label && name !== label.toLowerCase());
   const explanation = description && description.toLowerCase() !== label.toLowerCase()
     ? description
     : label === "Labeled item"
@@ -1238,7 +1455,8 @@ function buildResult(payload, detected) {
       : descriptions[label.toLowerCase()] || "It is an everyday object. Its exact purpose may depend on the item.";
   return {
     label,
-    explanation: explanation + alsoSeen,
+    explanation,
+    alsoSeen,
     recognizedText: trimmed(payload.recognizedText, 240),
     product: trimmed(payload.product, 120),
     unsure,
@@ -1258,26 +1476,34 @@ function resultStatus(result, describedOnline) {
   return ["Found it. No label text was read.", "warning"];
 }
 
-async function scanImage() {
+// again: "Not right? Try again". The cloud then looks at the whole photo (the
+// first try usually saw only the closest object), and the objects found before are reused.
+async function scanImage({ again = false } = {}) {
   if (!selectedImage) {
     setStatus("Capture a photo or choose one before scanning.", "error");
     return;
   }
+  stopReading();
   scanButton.disabled = true;
+  retryButton.disabled = true;
   scanButton.textContent = "Identifying…";
-  setStatus("Finding objects in the photo…");
+  setStatus(again ? "Looking at the whole photo again…" : "Finding objects in the photo…");
   try {
     // 1. Find every object on the phone.
     let detected = { closest: null, objects: [] };
-    try {
-      detected = await detectObjects(selectedImage);
-    } catch (error) {
-      console.error("On-device object detection failed; describing the whole photo", error);
+    if (again && lastScan) {
+      detected = lastScan.detected;
+    } else {
+      try {
+        detected = await detectObjects(selectedImage);
+      } catch (error) {
+        console.error("On-device object detection failed; describing the whole photo", error);
+      }
     }
 
     // 2. Ask the cloud about the closest one; if that fails, use the on-device name.
-    setStatus("Describing the closest object…");
-    const upload = detected.closest ? await cropDetection(selectedImage, detected.closest) : selectedImage;
+    if (!again) setStatus("Describing the closest object…");
+    const upload = detected.closest && !again ? await cropDetection(selectedImage, detected.closest) : selectedImage;
     let payload = {};
     let describedOnline = true;
     try {
@@ -1290,18 +1516,28 @@ async function scanImage() {
 
     // 3. Show it and say how sure we are.
     const result = buildResult(payload, detected);
-    renderDescription(result.label, result.explanation, result.recognizedText, result.product, result.unsure);
+    const sameAgain = again && lastScan?.label.toLowerCase() === result.label.toLowerCase();
+    renderResult(result);
+    rememberScan(result);
+    lastScan = { detected, label: result.label };
+    retryButton.hidden = false;
     resultContent.parentElement.scrollIntoView({
       behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       block: "nearest",
     });
-    setStatus(...resultStatus(result, describedOnline));
+    if (sameAgain) {
+      setStatus("Same answer again. Take a new photo from another angle, closer, or with more light.", "warning");
+    } else {
+      setStatus(...resultStatus(result, describedOnline));
+    }
     // Screen readers stay on the scan button unless told; move them to the answer.
     resultContent.querySelector(".object-title")?.focus({ preventScroll: true });
+    if (autoReadInput.checked) readAloud();
   } catch (error) {
     setStatus(error.message || "Could not identify that photo. Please try again.", "error");
   } finally {
     scanButton.disabled = false;
+    retryButton.disabled = false;
     scanButton.textContent = "Identify object";
   }
 }
@@ -1318,7 +1554,19 @@ cameraButton.addEventListener("click", () => {
 });
 photoButton.addEventListener("click", () => photoInput.click());
 photoInput.addEventListener("change", () => preparePhoto(photoInput.files?.[0]));
-scanButton.addEventListener("click", scanImage);
+scanButton.addEventListener("click", () => scanImage());
+retryButton.addEventListener("click", () => scanImage({ again: true }));
+autoCaptureInput.addEventListener("change", () => {
+  if (cameraStream) watchObjectCamera();
+});
+resultContent.addEventListener("click", (event) => {
+  const word = wordElements.find((item) => item.element === event.target);
+  if (word) speakWord(word);
+});
+textReadingPreview.addEventListener("click", (event) => {
+  const word = textPreviewWords.find((item) => item.element === event.target);
+  if (word) speakWord(word);
+});
 textCameraButton.addEventListener("click", () => {
   if (textCameraStream) {
     captureTextPhoto();
@@ -1377,6 +1625,17 @@ function updateLetterSpacingPreference() {
   recognizedText.style.letterSpacing = `${spacing}em`;
   textReadingPreview.style.letterSpacing = `${spacing}em`;
 }
+function updateLineSpacingPreference() {
+  document.querySelector("#lineSpacingValue").value = Number(lineSpacingInput.value).toFixed(1);
+  for (const element of [resultContent, recognizedText, textReadingPreview]) {
+    element.style.lineHeight = lineSpacingInput.value;
+  }
+}
+function updateReadingFont() {
+  document.documentElement.dataset.font = readingFontInput.value;
+  // The new font changes where lines break; wait for it to load, then re-measure.
+  document.fonts?.ready.then(refreshRuler);
+}
 const themeColorMeta = document.querySelector('meta[name="theme-color"]');
 function applyTint(tint) {
   document.documentElement.dataset.tint = tint;
@@ -1407,10 +1666,17 @@ for (const [name, input] of [
   ["speechRate", speechRateInput],
   ["rulerLines", rulerLinesInput],
   ["rulerAway", rulerAwayInput],
+  ["lineSpacing", lineSpacingInput],
+  ["readingFont", readingFontInput],
 ]) {
   const saved = loadSetting(name);
   if (saved !== null) input.value = saved;
   input.addEventListener("change", () => saveSetting(name, input.value));
+}
+for (const [name, input] of [["autoCapture", autoCaptureInput], ["autoRead", autoReadInput]]) {
+  const saved = loadSetting(name);
+  if (saved !== null) input.checked = saved === "on";
+  input.addEventListener("change", () => saveSetting(name, input.checked ? "on" : "off"));
 }
 voiceChoice.addEventListener("change", () => {
   saveSetting("voice", voiceChoice.value === "" ? "" : speechVoices[Number(voiceChoice.value)]?.name || "");
@@ -1421,6 +1687,9 @@ letterSpacingInput.addEventListener("input", updateLetterSpacingPreference);
 speechRateInput.addEventListener("input", updateReadingSpeechRate);
 fontSizeInput.addEventListener("input", refreshRuler);
 letterSpacingInput.addEventListener("input", refreshRuler);
+lineSpacingInput.addEventListener("input", updateLineSpacingPreference);
+lineSpacingInput.addEventListener("input", refreshRuler);
+readingFontInput.addEventListener("change", updateReadingFont);
 window.addEventListener("resize", refreshRuler);
 
 rulerViewButton.addEventListener("click", () => setRulerView(!rulerView));
@@ -1454,5 +1723,7 @@ if ("speechSynthesis" in window) {
 }
 updateFontSizePreference();
 updateLetterSpacingPreference();
+updateLineSpacingPreference();
+updateReadingFont();
 updateReadingSpeechRate();
 updateTextScanControls();

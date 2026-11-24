@@ -61,6 +61,7 @@
   --warning: #8a5300;
   --font: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", "PingFang TC",
     "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+  --reading-font: var(--font);
   font-family: var(--font);
   background: var(--ground);
   color: var(--ink);
@@ -370,6 +371,84 @@ h1 {
   transform: translateX(-50%);
 }
 
+/* Light and zoom over the live camera (only on phones that offer them). */
+.camera-tools {
+  position: absolute;
+  z-index: 3;
+  top: 14px;
+  right: 14px;
+  left: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.camera-tool {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(20, 20, 20, 0.72);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+button.camera-tool {
+  cursor: pointer;
+}
+
+button.camera-tool[aria-pressed="true"] {
+  background: #fff3b0;
+  color: #2b2a28;
+}
+
+.camera-zoom input {
+  width: min(160px, 40vw);
+  accent-color: #fff;
+}
+
+.focus-ring {
+  position: absolute;
+  z-index: 3;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.check-option {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.check-option input {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.preferences-grid .check-option {
+  grid-column: 1 / -1;
+  display: flex;
+  margin-top: 0;
+  color: var(--ink);
+}
+
 /* Buttons */
 
 .camera-actions,
@@ -469,6 +548,7 @@ h1 {
 
 .result-content {
   min-height: 140px;
+  font-family: var(--reading-font);
   font-size: 22px;
   line-height: 1.8;
   word-spacing: 0.16em;
@@ -508,6 +588,35 @@ h1 {
   margin: 0;
 }
 
+/* The result in blocks: what it is, then the label text, then what else is in view. */
+.result-block + .result-block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 2px solid var(--line);
+}
+
+.result-block-heading {
+  margin: 0 0 2px;
+  color: var(--mute);
+  font-family: var(--font);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+/* A word tapped to hear it on its own. */
+.tapped-word {
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.object-description [data-word],
+.text-reading-preview [data-word] {
+  cursor: pointer;
+}
+
 /* Read-aloud: the sentence gets a soft band, the current word is solid. */
 
 .reading-sentence {
@@ -536,6 +645,67 @@ h1 {
 
 .reading-actions .button-secondary {
   min-height: 60px;
+}
+
+.reading-actions .retry-button {
+  grid-column: 1 / -1;
+}
+
+/* Recent scans, newest first. */
+.history-card {
+  margin-top: 18px;
+  border-top: 2px solid var(--line);
+}
+
+.history-card summary {
+  min-height: 52px;
+  padding-top: 12px;
+  cursor: pointer;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.history-note {
+  margin: 0 0 10px;
+  color: var(--mute);
+  font-size: 15px;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-list button {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--ground);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.history-list button span::first-letter {
+  text-transform: uppercase;
+}
+
+.history-list time {
+  flex: none;
+  color: var(--mute);
+  font-size: 15px;
+  font-weight: 400;
 }
 
 .privacy-note,
@@ -601,6 +771,7 @@ h1 {
   border-radius: 14px;
   background: var(--paper);
   color: var(--ink);
+  font-family: var(--reading-font);
   font-size: 20px;
   line-height: 1.8;
   word-spacing: 0.16em;
@@ -892,4 +1063,13 @@ select {
 /* Three language buttons stay in one row on wide screens too. */
 .tint-options.language-options {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Reading font (Reading preferences). Chinese falls back to the usual Chinese fonts. */
+:root[data-font="lexend"] {
+  --reading-font: "Lexend", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+}
+
+:root[data-font="opendyslexic"] {
+  --reading-font: "OpenDyslexic", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
 }
