@@ -806,18 +806,15 @@ function setRulerView(on) {
   updateTextScanControls();
 }
 
-// Shows the result in blocks: what it is, the label's text, what the label
-// suggests, and what else is in the photo. Read aloud speaks the blocks in order,
-// each with a short lead-in ("The label says:"), and highlights the words.
+// Shows the result in blocks: what it is, then what the label suggests. Read
+// aloud speaks the blocks in order, each with a short lead-in, and highlights the words.
 // unsure: the name is only a low-confidence guess, so say "might be", not "is".
 function renderResult(result) {
-  const { label, explanation, recognizedText, product, alsoSeen = [], unsure } = result;
+  const { label, explanation, product, unsure } = result;
   const article = /^[aeiou]/i.test(label) ? "an" : "a";
   const blocks = [
     { body: `This ${unsure ? "might be" : "is"} ${article} ${label}. ${explanation}` },
-    recognizedText && { heading: "Label text", lead: "The label says: ", body: recognizedText },
     product && { heading: "The label suggests", lead: "The label suggests this is ", body: product },
-    alsoSeen.length && { heading: "Also in the photo", lead: "I can also see: ", body: alsoSeen.join(", ") },
   ].filter(Boolean);
 
   activeWord = null;
@@ -1441,23 +1438,20 @@ const trimmed = (value, limit) => (typeof value === "string" ? value.trim().slic
 // name wins; only when it gives none does the on-device detector's name stand
 // in, and then we say how sure it is ("might be").
 function buildResult(payload, detected) {
-  const { closest, objects } = detected;
+  const { closest } = detected;
   const unsure = Boolean(closest && !payload.label && closest.confidence < UNSURE_BELOW);
   const label = trimmed(payload.label, 80) || closest?.label || (payload.recognizedText ? "Labeled item" : "");
   if (!label) throw new Error(noObjectMessage(payload));
 
   const description = trimmed(payload.description, 360);
-  const alsoSeen = objects.filter((name) => name !== closest?.label && name !== label.toLowerCase());
   const explanation = description && description.toLowerCase() !== label.toLowerCase()
     ? description
     : label === "Labeled item"
-      ? "I could read some label text, but could not identify the object itself."
+      ? `I could not tell what this is. Its label reads: ${trimmed(payload.recognizedText, 240)}.`
       : descriptions[label.toLowerCase()] || "It is an everyday object. Its exact purpose may depend on the item.";
   return {
     label,
     explanation,
-    alsoSeen,
-    recognizedText: trimmed(payload.recognizedText, 240),
     product: trimmed(payload.product, 120),
     unsure,
   };
@@ -1470,10 +1464,7 @@ function resultStatus(result, describedOnline) {
   if (!describedOnline) {
     return ["Named on your phone only. The full description didn't load.", "warning"];
   }
-  if (result.recognizedText) {
-    return ["Found it, and read its label. Some words may be wrong.", "success"];
-  }
-  return ["Found it. No label text was read.", "warning"];
+  return ["Found it.", "success"];
 }
 
 // again: "Not right? Try again". The cloud then looks at the whole photo (the
