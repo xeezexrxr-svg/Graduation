@@ -1,0 +1,28 @@
+photo,expected,detector_said,app_said,correct,cloud_description
+apple.jpg,apple,apple,apple,yes,The main object is a red and yellow striped apple. It is red with yellow streaks and has a stem.
+banana.jpg,banana,banana,banana,yes,"A plastic bag of yellow bananas. Visible features: yellow color, smooth surface, slight bruising."
+pear1.jpg,pear,person,"round, yellowish-orange object",no,"A round, yellowish-orange object is being held by a hand. It appears to be a fruit, possibly a citrus fruit, judging by its color and texture."
+pear2.jpg,pear,bread,"round, yellowish-green fruit",no,"A hand holding a round, yellowish-green fruit with visible stem. The fruit is encased in white netting."
+orange1.jpg,orange,orange,bright orange citrus fruit,yes,"The main object is a bright orange citrus fruit being held by a person's hand. Visible features include its smooth, glossy skin and stem."
+orange2.jpg,orange,orange,orange,yes,A hand holding a small orange. The orange is round and bright orange in color.
+carrot1.jpg,carrot,vase,"bright orange, oblong object",no,"A bright orange, oblong object wrapped in clear plastic. It appears to be a frozen treat, possibly a popsicle."
+carrot2.jpg,carrot,orange,candy,no,"The main object is a bright orange, oblong candy or fruit. It is wrapped in clear plastic and has a green label with yellow text that says “SMILE” and a Chinese character."
+broccoli1.jpg,broccoli,basket,broccoli,yes,A plastic bag of broccoli. The broccoli is green and appears fresh.
+broccoli2.jpg,broccoli,broccoli,broccoli,yes,A plastic bag of broccoli. The broccoli is green and appears fresh.
+tomato.jpg,tomato,glass,tomato,yes,"A plastic bag of tomatoes. The tomatoes are red and appear fresh, with stems still attached."
+bread1.jpg,bread,person,packaged rectangular food item,no,A packaged rectangular food item. The packaging is clear plastic with visible color and text.
+bread2.jpg,bread,bread,sandwich,no,A sandwich in clear plastic wrap. The sandwich is white and appears to be sliced bread.
+hotdog-bun.jpg,bread,,bread,yes,A plastic bag containing several round bread rolls. The rolls are golden brown and appear to have green herbs sprinkled on top. Some rolls have sesame seeds visible. The bag is clear plastic and rests on a light wooden surface.
+milk.jpg,milk carton,,milk,yes,This is a carton of FreshDelight milk. It is white with a picture of a cow and Chinese text.
+yogurt.jpg,yogurt,refrigerator,yogurt,yes,The main objects are containers of Greek yogurt. They are blue plastic containers with images of yogurt and spoons.
+cereal.jpg,cereal box,book,Koko milk chocolate,no,"This is a box of Koko milk chocolate. The box is brown with green accents and features the Koko brand name prominently displayed in large, bold letters. Nutritional information is also visible on the box."
+chips.jpg,snack bag,snack bag,chips,no,This is a bag of Lay's potato chips. The bag is brown with red and white text and images of potato chips.
+chocolate.jpg,chocolate bar,milk carton,chocolate bar,yes,This is a Hershey's Cookies 'n' Creme chocolate bar wrapper. The wrapper is primarily white with blue trim and features the Hershey's logo and product name in dark brown text.
+noodles.jpg,noodles,snack bag,AnSung noodle soup,no,"This is a package of AnSung noodle soup. The package is primarily white with orange and red accents. It shows a picture of a bowl of soup with noodles, vegetables, and meat."
+pens.jpg,pen,snack bag,pen,yes,This is a package of Pentel EnerGel X pens. The package contains two black pens with black caps.
+scissors.jpg,scissors,scissors,scissors,yes,A pair of green-handled scissors. The packaging shows Japanese text and indicates they are made of stainless steel.
+batteries.jpg,battery,snack bag,battery,yes,The main object is a pack of Energizer Max batteries. They are silver with red lettering and red tips.
+toothbrush1.jpg,toothbrush,credit card,toothbrush,yes,This is a Colgate toothbrush. The toothbrush has a green handle and a brown/white bristle head.
+toothbrush2.jpg,toothbrush,,toothbrush,yes,"This is a package of Colgate toothbrushes. The package is red and shows three toothbrushes inside, each with a blue handle and clear plastic wrapping. The package also displays “360°” on the top right corner and mentions “Sensitive 48%”."
+toothpaste1.jpg,toothpaste,cereal box,toothpaste,yes,"This is a stack of Colgate toothpaste boxes. The boxes are red, white, and teal with Chinese text and images of toothbrushes and teeth."
+toothpaste2.jpg,toothpaste,,Darlie breath strips,no,This is a box of Darlie breath strips. The box is white with pink and purple snowflakes and star patterns. The Darlie logo is visible in green and pink. The text is in English and Chinese characters.

@@ -1,0 +1,23 @@
+photo,expected,detector_said,app_said,correct,cloud_description
+pear1.jpg,pear,orange,"photo shows a large, round, yellow fruit",no,"The photo shows a large, round, yellow fruit held in a person's hand. The fruit is mostly yellow with small white dots and has a slightly bumpy texture."
+pear2.jpg,pear,orange,yellow fruit,no,A yellow fruit. It is round and smooth with small dark spots.
+mouse.jpg,computer mouse,computer mouse,mouse,yes,This is a computer mouse. It is black and has a scroll wheel and buttons.
+water-bottle.jpg,water bottle,bottle,water bottle,yes,A clear plastic water bottle with a light teal lid and markings for drinking times.
+mug.jpg,mug,cup,mug,yes,This is a clear glass mug. It has a grid pattern on its surface and appears empty.
+scissors.jpg,scissors,scissors,scissors,yes,A pair of scissors. The blades are metallic and appear slightly worn. The handles are dark gray or black and have a textured grip.
+wallet-closed.jpg,wallet,suitcase,wallet,yes,This is a wallet. It is dark gray or blue-gray in color and has a repeating pattern.
+wallet-open.jpg,wallet,keyboard,wallet,yes,"A black wallet or card holder containing several cards. The wallet is open, revealing the cards inside."
+laptop.jpg,laptop,person,laptop,yes,This is a laptop lid. It has a dark gray or black finish and a stylized logo in the center.
+tablet.jpg,tablet,,tablet,yes,A tablet computer. It is white and has a stylus resting on top.
+eggs.jpg,egg,,egg,yes,This is a clear plastic egg carton containing two white eggs.
+fan.jpg,fan,plate,fan,yes,A Philips fan. It is white and has a circular fan head with visible blades.
+light-bulbs.jpg,light bulb,cake,ceiling light fixture,yes,This is a ceiling light fixture. It has a circular shape with three white light bulbs inside. The fixture is silver-colored metal with scalloped edges.
+fridge.jpg,refrigerator,refrigerator,refrigerator,yes,This is a stainless steel refrigerator. It has a silver handle and a light green sticker on the top right corner.
+glasses1.jpg,glasses,tissue box,glasses,yes,A pair of silver-framed eyeglasses with clear lenses rests on a dark textured surface.
+glasses2.jpg,glasses,,glasses,yes,A pair of silver-framed eyeglasses. The lenses appear clear and the frame is thin and metallic.
+eraser.jpg,eraser,remote control,eraser,yes,A dust-free eraser. It is white and rectangular.
+pen.jpg,pen,,pen,yes,A clear pen. It is transparent and has a clip at the top.
+ruler.jpg,ruler,,ruler,yes,A ruler. It is transparent and shows markings in centimeters.
+hanger.jpg,hanger,bed,hanger,yes,A pink clothes hanger. It is thin and curved.
+chair.jpg,chair,chair,chair,yes,This is a bright orange folding chair. It has a metal frame and seat and appears to be empty.
+banknote.jpg,banknote,person,banknote,yes,"This is a 100 Chinese Renminbi banknote. It features a man in a red shirt, Chinese characters, and red and beige coloring."
