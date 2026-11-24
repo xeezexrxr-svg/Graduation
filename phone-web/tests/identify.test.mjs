@@ -2,7 +2,39 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CLIENT_HEADER, isAllowedCaller, normalizeLabel, parseRecognition, readAiResult } from "../functions/api/identify.js";
+import { CLIENT_HEADER, isAllowedCaller, normalizeLabel, onRequestPost, parseRecognition, readAiResult } from "../functions/api/identify.js";
+
+// Calls /api/identify with a fake Workers AI and returns the models it was asked to use.
+async function modelsUsed(query, branch) {
+  const used = [];
+  const env = {
+    CF_PAGES_BRANCH: branch,
+    AI: {
+      run: async (model) => {
+        used.push(model);
+        return model.includes("moondream") ? { answer: "A red apple." } : { response: "A red apple." };
+      },
+    },
+  };
+  const request = new Request(`https://graduation-6j1.pages.dev/api/identify${query}`, {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg", [CLIENT_HEADER]: "test" },
+    body: new Uint8Array([1, 2, 3]),
+  });
+  const response = await onRequestPost({ request, env });
+  assert.equal((await response.json()).label, "apple");
+  return used;
+}
+
+test("normal scans use Moondream; 'Try again' (careful) uses only Qwen", async () => {
+  assert.deepEqual(await modelsUsed("", "main"), ["@cf/moondream/moondream3.1-9B-A2B", "@cf/moondream/moondream3.1-9B-A2B"]);
+  assert.deepEqual(await modelsUsed("?careful=1", "main"), ["@cf/qwen/qwen3.8-27b"]);
+});
+
+test("the model test switch works on test branches only, never on the main site", async () => {
+  assert.deepEqual(await modelsUsed("?model=llama4", "main"), ["@cf/moondream/moondream3.1-9B-A2B", "@cf/moondream/moondream3.1-9B-A2B"]);
+  assert.equal((await modelsUsed("?model=llama4", "model-test"))[0], "@cf/meta/llama-4-scout-17b-16e-instruct");
+});
 
 test("the object's name is taken from the start of the description", () => {
   assert.equal(normalizeLabel("A black computer mouse. It is used to move the pointer."), "mouse");

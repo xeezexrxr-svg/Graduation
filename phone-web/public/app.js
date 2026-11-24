@@ -1398,20 +1398,23 @@ function readScannerText(selectedOnly) {
 // Long enough for a slow phone connection; after this, give up instead of
 // leaving the user waiting with no answer.
 const CLOUD_TIMEOUT_MS = 20000;
+// "Not right? Try again" asks a slower, smarter model, so it may wait longer.
+const CAREFUL_TIMEOUT_MS = 60000;
 
 // Sends the photo (or the closest object's crop) to the ClearView cloud.
-async function askCloud(image) {
+// careful: use the slower, smarter model.
+async function askCloud(image, { careful = false } = {}) {
   if (!navigator.onLine) throw new Error("You're offline. Connect to the internet and try again.");
   let response;
   try {
-    response = await fetch("/api/identify", {
+    response = await fetch(careful ? "/api/identify?careful=1" : "/api/identify", {
       method: "POST",
       headers: {
         "Content-Type": image.type || "image/jpeg",
         "X-ClearView-Client": "phone",
       },
       body: image,
-      signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
+      signal: AbortSignal.timeout(careful ? CAREFUL_TIMEOUT_MS : CLOUD_TIMEOUT_MS),
     });
   } catch (error) {
     console.error("Cloud request failed", error);
@@ -1467,8 +1470,8 @@ function resultStatus(result, describedOnline) {
   return ["Found it.", "success"];
 }
 
-// again: "Not right? Try again". The cloud then looks at the whole photo (the
-// first try usually saw only the closest object), and the objects found before are reused.
+// again: "Not right? Try again". A slower, smarter model then looks at the whole
+// photo (the first try usually saw only the closest object); the objects found before are reused.
 async function scanImage({ again = false } = {}) {
   if (!selectedImage) {
     setStatus("Capture a photo or choose one before scanning.", "error");
@@ -1478,7 +1481,9 @@ async function scanImage({ again = false } = {}) {
   scanButton.disabled = true;
   retryButton.disabled = true;
   scanButton.textContent = "Identifying…";
-  setStatus(again ? "Looking at the whole photo again…" : "Finding objects in the photo…");
+  setStatus(again
+    ? "Looking more carefully. This can take up to a minute…"
+    : "Finding objects in the photo…");
   try {
     // 1. Find every object on the phone.
     let detected = { closest: null, objects: [] };
@@ -1498,9 +1503,9 @@ async function scanImage({ again = false } = {}) {
     let payload = {};
     let describedOnline = true;
     try {
-      payload = await askCloud(upload);
+      payload = await askCloud(upload, { careful: again });
     } catch (error) {
-      if (!detected.closest) throw error;
+      if (!detected.closest || again) throw error;
       console.error("Online description failed; using the on-device name", error);
       describedOnline = false;
     }

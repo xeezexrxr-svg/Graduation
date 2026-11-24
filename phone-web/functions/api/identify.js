@@ -4,6 +4,10 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 // Cloudflare retired LLaVA (@cf/llava-hf/llava-1.5-7b-hf) on 2026-11-20, so one
 // vision model now both describes the object and reads its label.
 const VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+// "Not right? Try again" (?careful=1) asks this slower, smarter model. In the
+// 2026-11-25 test it named pears, a wrapped carrot, bread and a cereal box that
+// Moondream missed, but often took over 20 seconds.
+const CAREFUL_MODEL = "@cf/qwen/qwen3.8-27b";
 // Other vision models to compare with Moondream: POST /api/identify?model=llama4.
 // Only on test branches, never on the main site.
 const TEST_MODELS = {
@@ -15,6 +19,11 @@ const DESCRIBE_QUESTION = "What is the main object in this photo? Answer in one 
   + "using simple, everyday words, starting with its name (for example: \"A computer mouse. It is "
   + "used to move the pointer on a computer screen.\"). Name exactly what you see and mention useful "
   + "visible features such as colour or contents. Do not guess details that are not visible.";
+// Being tested (test branches only, ?prompt=exact): asks for the exact kind of
+// food, since Moondream often says "yellow fruit" or "oblong object". No example
+// names on purpose: the model repeats examples (see the note below).
+const EXACT_DESCRIBE_QUESTION = DESCRIBE_QUESTION + " If it is a fruit, vegetable or other food, "
+  + "name the exact kind, not just \"fruit\", \"food\" or \"object\". If it is in packaging, name what is inside.";
 // No example object besides the mouse: an earlier "a tea bottle, not just a
 // bottle" example made the model call pears, eggs and glasses "tea bottles".
 // Worded so the model has no phrase to echo back as fake "label text" (an earlier
@@ -323,9 +332,11 @@ export async function onRequestPost({ request, env }) {
   try {
     const imageUri = imageDataUri(image, contentType);
     const rawTypes = {};
-    const testModel = env.CF_PAGES_BRANCH && env.CF_PAGES_BRANCH !== "main"
-      ? TEST_MODELS[new URL(request.url).searchParams.get("model")]
-      : undefined;
+    const options = new URL(request.url).searchParams;
+    const testBranch = Boolean(env.CF_PAGES_BRANCH && env.CF_PAGES_BRANCH !== "main");
+    const careful = options.get("careful") === "1";
+    const testModel = careful ? CAREFUL_MODEL : testBranch ? TEST_MODELS[options.get("model")] : undefined;
+    const describeQuestion = testBranch && options.get("prompt") === "exact" ? EXACT_DESCRIBE_QUESTION : DESCRIBE_QUESTION;
     const ask = async (name, question, maxTokens) => {
       if (testModel) return askChatModel(env, testModel, imageUri, question, maxTokens);
       const raw = await env.AI.run(VISION_MODEL, {
@@ -343,8 +354,9 @@ export async function onRequestPost({ request, env }) {
     // Describe and read the label at the same time; a failed label read
     // doesn't block the description.
     const [objectResult, textResult] = await Promise.all([
-      ask("describe", DESCRIBE_QUESTION, 128),
-      ask("label", LABEL_QUESTION, 256).catch((error) => {
+      ask("describe", describeQuestion, 128),
+      // The careful model is slow and costly, so it only names the object.
+      careful ? null : ask("label", LABEL_QUESTION, 256).catch((error) => {
         console.error("Workers AI label reading failed; keeping object result", error);
         return null;
       }),
