@@ -25,6 +25,7 @@ const HUMAN_LABELS = new Set(["person", "people", "human", "hand", "arm", "finge
 const OBJECT_LABELS = [
   ...VOCABULARY.filter((name) => !HUMAN_LABELS.has(name)),
   "mouse", "phone", "mobile phone", "cellphone", "remote", "shoes", "eyeglasses",
+  "chips", "crisps", // else "potato chips" is named "potato"
 ];
 const LABEL_ALIASES = new Map([
   ["computer mouse", "mouse"],
@@ -33,7 +34,11 @@ const LABEL_ALIASES = new Map([
   ["eyeglasses", "glasses"],
 ]);
 // How descriptions open before the name: "This is a", "The main object is a pair of".
-const OPENING = /^(?:(?:the\s+)?main\s+object(?:\s+in\s+(?:this|the)\s+(?:photo|image|picture))?\s+is|this\s+is|it\s+is|it's|here\s+is|there\s+is|i\s+see)\s+/i;
+const OPENING = /^(?:(?:the\s+)?main\s+objects?(?:\s+in\s+(?:this|the)\s+(?:photo|image|picture))?\s+(?:is|are)|this\s+is|these\s+are|it\s+is|it's|here\s+is|there\s+is|i\s+see)\s+/i;
+// Packaging around the object: "a plastic bag of tomatoes" is tomatoes.
+const PACKAGING = /^(?:[a-z-]+\s+){0,2}?(?:pair|set|bag|package|pack|packet|box|carton|stack|container|tray|bunch)(?:e?s)?\s+(?:of|containing|filled\s+with|full\s+of)\s+/i;
+// Packaging that is also on the list: it loses to the product named with it ("toothpaste boxes").
+const PACKAGING_NAMES = new Set(["box", "bag", "plastic bag"]);
 
 function jsonResponse(payload, status = 200) {
   return Response.json(payload, {
@@ -79,15 +84,23 @@ async function readImage(request) {
 
 // The known name inside a short phrase. In English the noun comes last
 // ("frosted glass mug" is a mug), so the name that ends latest wins, and the
-// longer one breaks a tie ("water bottle" over "bottle").
+// longer one breaks a tie ("water bottle" over "bottle"). Plurals count
+// ("tomatoes", "batteries"), and packaging loses to any other name.
 function knownNameIn(phrase) {
   let best = null;
   for (const name of OBJECT_LABELS) {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    for (const match of phrase.matchAll(new RegExp(`(?<![a-z-])${escaped}(?![a-z-])`, "gi"))) {
-      const end = match.index + name.length;
-      if (!best || end > best.end || (end === best.end && name.length > best.name.length)) {
-        best = { end, name };
+    const pattern = /y$/.test(name) ? `${escaped.slice(0, -1)}(?:y|ies)` : `${escaped}(?:e?s)?`;
+    for (const match of phrase.matchAll(new RegExp(`(?<![a-z-])${pattern}(?![a-z-])`, "gi"))) {
+      const end = match.index + match[0].length;
+      const packaging = PACKAGING_NAMES.has(name);
+      if (
+        !best
+        || (best.packaging && !packaging)
+        || (best.packaging === packaging
+          && (end > best.end || (end === best.end && name.length > best.name.length)))
+      ) {
+        best = { end, name, packaging };
       }
     }
   }
@@ -102,7 +115,7 @@ export function normalizeLabel(answer) {
     .replace(/^[\s"'`]+|[\s"'`]+$/g, "")
     .replace(OPENING, "")
     .replace(/^(?:a|an|the)\s+/i, "")
-    .replace(/^(?:pair|set)\s+of\s+/i, "")
+    .replace(PACKAGING, "")
     .replace(/[.!?].*$/, "")
     // Keep the name, not what follows it ("bus parked on a street" → "bus").
     .replace(/\s+(?:parked|sitting|lying|standing|placed|resting|held|holding|containing|made|being|that|which|with|on|in|at|of|for|from|next|near|is|are|used)\b.*$/i, "");

@@ -29,6 +29,20 @@ test("the object's own name wins over a colour, material, or a later sentence", 
   assert.equal(normalizeLabel("The orange chair is the main object in the photo."), "chair");
 });
 
+// Real Moondream answers from the 2026-11-24 supermarket test: the packaging was named, not the product.
+test("a bag, package or box of something is named by what is inside", () => {
+  assert.equal(normalizeLabel("A plastic bag of ripe yellow bananas. Visible features: yellow color."), "banana");
+  assert.equal(normalizeLabel("The main object is a plastic bag of broccoli. A white label is visible."), "broccoli");
+  assert.equal(normalizeLabel("A plastic bag of tomatoes. The bag is clear plastic."), "tomato");
+  assert.equal(normalizeLabel("A plastic bag containing several round bread rolls."), "bread");
+  assert.equal(normalizeLabel("This is a package of Pentel EnerGel X pens. The package contains two pens."), "pen");
+  assert.equal(normalizeLabel("The main object is a pack of Energizer Max batteries."), "battery");
+  assert.equal(normalizeLabel("This is a package of Colgate toothbrushes. The package is red."), "toothbrush");
+  assert.equal(normalizeLabel("This is a stack of Colgate toothpaste boxes. The boxes are red."), "toothpaste");
+  assert.equal(normalizeLabel("The main objects are containers of Greek yogurt. They are blue."), "yogurt");
+  assert.equal(normalizeLabel("This is a bag of Lay's potato chips. The bag is brown."), "chips");
+});
+
 test("objects not on the list keep the model's own words", () => {
   assert.equal(normalizeLabel("The main object is a ceiling light fixture. It has three bulbs."), "ceiling light fixture");
 });
