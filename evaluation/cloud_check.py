@@ -30,6 +30,7 @@ from evaluate import Detector  # noqa: E402
 ALSO_RIGHT = {
     "computer mouse": ["mouse"],  # the cloud shortens it on purpose
     "light bulb": ["ceiling light"],
+    "milk carton": ["milk"],  # "FreshDelight milk" names it correctly
 }
 
 

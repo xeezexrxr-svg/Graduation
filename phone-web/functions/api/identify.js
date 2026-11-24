@@ -26,7 +26,11 @@ const OBJECT_LABELS = [
   ...VOCABULARY.filter((name) => !HUMAN_LABELS.has(name)),
   "mouse", "phone", "mobile phone", "cellphone", "remote", "shoes", "eyeglasses",
   "chips", "crisps", // else "potato chips" is named "potato"
+  "milk",
 ];
+// Words that also describe other things ("bright orange object", "milk chocolate"):
+// they name the object only when nothing follows them.
+const ONLY_AT_END = new Set(["orange", "peach", "lemon", "milk"]);
 const LABEL_ALIASES = new Map([
   ["computer mouse", "mouse"],
   ["mobile phone", "cell phone"],
@@ -93,6 +97,7 @@ function knownNameIn(phrase) {
     const pattern = /y$/.test(name) ? `${escaped.slice(0, -1)}(?:y|ies)` : `${escaped}(?:e?s)?`;
     for (const match of phrase.matchAll(new RegExp(`(?<![a-z-])${pattern}(?![a-z-])`, "gi"))) {
       const end = match.index + match[0].length;
+      if (ONLY_AT_END.has(name) && phrase.slice(end).trim()) continue;
       const packaging = PACKAGING_NAMES.has(name);
       if (
         !best
@@ -114,11 +119,13 @@ export function normalizeLabel(answer) {
     .replace(/^\s*(?:object|item|answer)\s*[:=-]\s*/i, "")
     .replace(/^[\s"'`]+|[\s"'`]+$/g, "")
     .replace(OPENING, "")
+    // "A hand holding a red apple" is about the apple.
+    .replace(/^(?:(?:a|an|the)\s+)?(?:person'?s\s+)?hand\s+(?:is\s+)?holding\s+/i, "")
     .replace(/^(?:a|an|the)\s+/i, "")
     .replace(PACKAGING, "")
     .replace(/[.!?].*$/, "")
     // Keep the name, not what follows it ("bus parked on a street" → "bus").
-    .replace(/\s+(?:parked|sitting|lying|standing|placed|resting|held|holding|containing|made|being|that|which|with|on|in|at|of|for|from|next|near|is|are|used)\b.*$/i, "");
+    .replace(/\s+(?:parked|sitting|lying|standing|placed|resting|held|holding|containing|wrapped|made|being|that|which|with|on|in|at|of|for|from|next|near|is|are|used)\b.*$/i, "");
   const known = knownNameIn(phrase);
   if (known) return known;
 

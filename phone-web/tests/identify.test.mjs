@@ -43,6 +43,18 @@ test("a bag, package or box of something is named by what is inside", () => {
   assert.equal(normalizeLabel("This is a bag of Lay's potato chips. The bag is brown."), "chips");
 });
 
+test("'orange', 'milk' and the like only name the object when they end the phrase", () => {
+  assert.equal(normalizeLabel("An orange held in a hand."), "orange");
+  assert.equal(normalizeLabel("This is a carton of FreshDelight milk. It is white."), "milk");
+  assert.notEqual(normalizeLabel("A bright orange, oblong object wrapped in clear plastic."), "orange");
+  assert.notEqual(normalizeLabel("This is a box of Koko milk chocolate. The box is brown."), "milk");
+});
+
+test("'A hand holding' is skipped, so the name comes from what is held", () => {
+  assert.equal(normalizeLabel("A hand holding a red apple."), "apple");
+  assert.equal(normalizeLabel("A hand holding a round, yellowish-green fruit with visible stem."), "round, yellowish-green fruit");
+});
+
 test("objects not on the list keep the model's own words", () => {
   assert.equal(normalizeLabel("The main object is a ceiling light fixture. It has three bulbs."), "ceiling light fixture");
 });
