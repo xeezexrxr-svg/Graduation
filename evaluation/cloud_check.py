@@ -21,6 +21,7 @@ sys.path.insert(0, str(PROJECT / "evaluation"))
 
 import cv2  # noqa: E402
 
+import clearview.analysis  # noqa: E402
 from clearview.analysis import CLOUD_ERRORS, request_cloud_details  # noqa: E402
 from clearview.detection import select_closest  # noqa: E402
 from evaluate import Detector  # noqa: E402
@@ -39,7 +40,10 @@ def main():
     parser.add_argument("photos", type=Path)
     parser.add_argument("labels", type=Path)
     parser.add_argument("--out", type=Path, default=PROJECT / "evaluation" / "results-cloud.csv")
+    parser.add_argument("--url", help="another /api/identify address, e.g. a test branch with ?model=llama4")
     args = parser.parse_args()
+    if args.url:
+        clearview.analysis.CLOUD_VISION_API_URL = args.url
 
     with args.labels.open(newline="", encoding="utf-8") as labels_file:
         rows = [row for row in csv.DictReader(labels_file) if (row.get("photo") or "").strip()]

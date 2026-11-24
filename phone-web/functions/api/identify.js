@@ -4,6 +4,13 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 // Cloudflare retired LLaVA (@cf/llava-hf/llava-1.5-7b-hf) on 2026-11-20, so one
 // vision model now both describes the object and reads its label.
 const VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+// Other vision models to compare with Moondream: POST /api/identify?model=llama4.
+// Only on test branches, never on the main site.
+const TEST_MODELS = {
+  llama4: "@cf/meta/llama-4-scout-17b-16e-instruct",
+  qwen: "@cf/qwen/qwen3.8-27b",
+  mistral: "@cf/mistralai/mistral-small-3.1-24b-instruct",
+};
 const DESCRIBE_QUESTION = "What is the main object in this photo? Answer in one or two short sentences "
   + "using simple, everyday words, starting with its name (for example: \"A computer mouse. It is "
   + "used to move the pointer on a computer screen.\"). Name exactly what you see and mention useful "
@@ -180,6 +187,28 @@ export function parseAiText(text, kind) {
   }
 }
 
+// Chat-style vision models take the photo as part of a message, not an `image` field.
+async function askChatModel(env, model, imageUri, question, maxTokens) {
+  const reasoning = model.includes("qwen");
+  const raw = await env.AI.run(model, {
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: question },
+        { type: "image_url", image_url: { url: imageUri } },
+      ],
+    }],
+    temperature: 0.1,
+    // A reasoning model spends tokens thinking first, so it needs more room.
+    max_tokens: reasoning ? maxTokens + 1024 : maxTokens,
+    ...(reasoning ? { reasoning_effort: "low" } : {}),
+  });
+  const value = await readAiResult(raw);
+  const answer = value?.response ?? value?.choices?.[0]?.message?.content ?? value?.answer ?? "";
+  const text = typeof answer === "string" ? answer : JSON.stringify(answer);
+  return { answer: text.replace(/<think>[\s\S]*?<\/think>/g, "").trim() };
+}
+
 function describeResultType(value) {
   if (value === null || value === undefined) return String(value);
   return `${value.constructor?.name || typeof value} with fields [${Object.keys(value).join(", ")}]`;
@@ -294,7 +323,11 @@ export async function onRequestPost({ request, env }) {
   try {
     const imageUri = imageDataUri(image, contentType);
     const rawTypes = {};
+    const testModel = env.CF_PAGES_BRANCH && env.CF_PAGES_BRANCH !== "main"
+      ? TEST_MODELS[new URL(request.url).searchParams.get("model")]
+      : undefined;
     const ask = async (name, question, maxTokens) => {
+      if (testModel) return askChatModel(env, testModel, imageUri, question, maxTokens);
       const raw = await env.AI.run(VISION_MODEL, {
       task: "query",
       image: imageUri,
@@ -346,6 +379,8 @@ export async function onRequestPost({ request, env }) {
     console.error("Workers AI object recognition failed", error);
     return jsonResponse({
       error: "Cloudflare could not identify this photo. Please try again.",
+      // On test branches, say why, so a model comparison can be fixed.
+      detail: env.CF_PAGES_BRANCH && env.CF_PAGES_BRANCH !== "main" ? String(error?.message || error).slice(0, 300) : undefined,
     }, 502);
   }
 }
