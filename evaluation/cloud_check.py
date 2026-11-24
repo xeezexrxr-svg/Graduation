@@ -37,6 +37,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("photos", type=Path)
     parser.add_argument("labels", type=Path)
+    parser.add_argument("--out", type=Path, default=PROJECT / "evaluation" / "results-cloud.csv")
     args = parser.parse_args()
 
     with args.labels.open(newline="", encoding="utf-8") as labels_file:
@@ -56,14 +57,16 @@ def main():
             cloud = request_cloud_details(frame, target)
         except CLOUD_ERRORS as error:
             cloud = {"label": "", "description": f"(cloud failed: {error})"}
-        expected = row["closest"].strip().lower()
+        # "bread|hot dog": either name counts as right for this photo.
+        names = [name.strip() for name in row["closest"].lower().split("|")]
+        expected = names[0]
         answer = (cloud.get("label") or "").strip() or target["label"]
-        correct = any(name in answer.lower() for name in [expected, *ALSO_RIGHT.get(expected, [])])
+        correct = any(name in answer.lower() for name in [*names, *ALSO_RIGHT.get(expected, [])])
         results.append([row["photo"], expected, target["label"], answer,
                          "yes" if correct else "no", (cloud.get("description") or "").strip()])
         print(f"{row['photo']:<18} {'yes' if correct else 'no ':<4} {answer}")
 
-    out = PROJECT / "evaluation" / "results-cloud.csv"
+    out = args.out
     with out.open("w", newline="", encoding="utf-8") as out_file:
         writer = csv.writer(out_file)
         writer.writerow(["photo", "expected", "detector_said", "app_said", "correct", "cloud_description"])
